@@ -1,8 +1,9 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import json
 import os
+import gspread
+from google.oauth2.service_account import Credentials
 
 # ==============================================================================
 # CONFIGURAÇÃO DE PÁGINA E ESTILOS
@@ -26,7 +27,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# FUNÇÕES OTIMIZADAS PARA OMITIR GARGALOS (CACHE DE DADOS)
+# PERSISTÊNCIA LOCAL (USUÁRIOS E MAPA DE PLANILHAS)
 # ==============================================================================
 ARQUIVO_DADOS = "dados_sistema.json"
 
@@ -71,19 +72,56 @@ dados_sistema = carregar_dados()
 USUARIOS = dados_sistema["usuarios"]
 PLANILHAS_POR_SETOR = dados_sistema["planilhas"]
 
-# Função de leitura de Excel em Cache (Evita gargalos e travamentos ao ler arquivos grandes)
-@st.cache_data(ttl=300)  # Mantém o dado em cache na memória por 5 minutos
-def carregar_dados_excel_publico(sheet_id):
-    """
-    Carrega dados de uma aba do Google Sheets diretamente em um DataFrame Pandas.
-    Não trava a interface e permite manipulação direta de relatórios em alta velocidade.
-    """
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-    try:
-        df = pd.read_csv(url)
-        return df
-    except Exception as e:
+# ==============================================================================
+# CONEXÃO API GOOGLE SHEETS VIA GSPREAD (COM CACHE E MULTITAREFA)
+# ==============================================================================
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+
+@st.cache_resource
+def conectar_google_api():
+    """Autentica com o Google Drive/Sheets usando a Service Account."""
+    # Prioridade 1: Arquivo chave.json local
+    if os.path.exists("chave.json"):
+        creds = Credentials.from_service_account_file("chave.json", scopes=SCOPES)
+        return gspread.authorize(creds)
+    # Prioridade 2: Secrets do Streamlit Cloud
+    elif "gcp_service_account" in st.secrets:
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
+        return gspread.authorize(creds)
+    return None
+
+client_gspread = conectar_google_api()
+
+@st.cache_data(ttl=180)  # Mantém os dados em cache por 3 minutos para evitar chamadas redundantes
+def ler_planilha_api(spreadsheet_id):
+    """Lê os dados da primeira aba da planilha usando a Service Account."""
+    if not client_gspread:
+        st.error("Credenciais do Google Cloud não encontradas (`chave.json`).")
         return None
+    try:
+        sheet = client_gspread.open_by_key(spreadsheet_id).sheet1
+        dados = sheet.get_all_records()
+        return pd.DataFrame(dados)
+    except Exception as e:
+        st.error(f"Erro ao acessar planilha via API: {e}")
+        return None
+
+def salvar_alteracoes_api(spreadsheet_id, df_atualizado):
+    """Atualiza os dados da planilha no Google Sheets."""
+    if not client_gspread:
+        return False
+    try:
+        sheet = client_gspread.open_by_key(spreadsheet_id).sheet1
+        sheet.clear()
+        sheet.update([df_atualizado.columns.values.tolist()] + df_atualizado.values.tolist())
+        st.cache_data.clear()  # Invalida o cache local para refletir a edição na hora
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar na planilha: {e}")
+        return False
 
 # ==============================================================================
 # CONTROLE DE SESSÃO / LOGIN
@@ -213,7 +251,7 @@ else:
                         salvar_dados(dados_sistema)
                         st.rerun()
 
-    # --- EXIBIÇÃO DE PLANILHAS (COM OPÇÃO DE EMBED OU TABELA RÁPIDA) ---
+    # --- OPERAÇÃO DE PLANILHAS (VISUALIZAÇÃO E EDIÇÃO RÁPIDA) ---
     else:
         planilhas_do_setor = PLANILHAS_POR_SETOR.get(setor_selecionado, {})
         
@@ -224,6 +262,7 @@ else:
                 url_google_sheets = f"https://docs.google.com/spreadsheets/d/{id_planilha}/edit"
             else:
                 st.selectbox("📁 Planilha:", ["Nenhuma planilha cadastrada"], disabled=True)
+                id_planilha = None
                 url_google_sheets = "#"
             
         with c_botao:
@@ -231,7 +270,7 @@ else:
                 st.markdown(
                     f'<a href="{url_google_sheets}" target="_blank">'
                     f'<button style="width:100%; height:38px; margin-top:24px; background-color:#2e7d32; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">'
-                    f'🔗 Abrir em Nova Aba</button></a>',
+                    f'🔗 Abrir no Google Sheets</button></a>',
                     unsafe_allow_html=True
                 )
             
@@ -241,24 +280,21 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
 
-        if planilhas_do_setor:
-            modo_view = st.radio("Modo de Exibição:", ["Editor Google (Iframe)", "Visualizador Rápido de Dados (Alta Performance)"], horizontal=True)
-            
-            if modo_view == "Editor Google (Iframe)":
-                iframe_code = f"""
-                <iframe 
-                    src="{url_google_sheets}" 
-                    style="width: 100%; height: 80vh; border: none;"
-                    allow="clipboard-read; clipboard-write">
-                </iframe>
-                """
-                components.html(iframe_code, height=750, scrolling=False)
+        if id_planilha:
+            df_dados = ler_planilha_api(id_planilha)
+            if df_dados is not None:
+                st.caption("⚡ **Modo Nativo via API**: Você pode editar os valores na tabela abaixo e salvar direto no Google Sheets.")
+                
+                # Editor de dados nativo do Streamlit (Muito mais leve que o iframe)
+                df_editado = st.data_editor(df_dados, use_container_width=True, height=550, num_rows="dynamic")
+                
+                col_salvar, col_vazio = st.columns([1, 3])
+                with col_salvar:
+                    if st.button("💾 Salvar Alterações na Nuvem"):
+                        if salvar_alteracoes_api(id_planilha, df_editado):
+                            st.success("Planilha sincronizada com sucesso!")
+                            st.rerun()
             else:
-                st.caption("⚡ Dados carregados via Cache em alta performance. Atualiza a cada 5 minutos sem travar o navegador.")
-                df_dados = carregar_dados_excel_publico(id_planilha)
-                if df_dados is not None:
-                    st.dataframe(df_dados, use_container_width=True, height=600)
-                else:
-                    st.warning("Não foi possível ler os dados diretamente. Certifique-se de que a planilha está pública para leitura.")
+                st.warning("Não foi possível carregar a planilha. Verifique se compartilhou a planilha como Editor com o e-mail da Service Account (`chave.json`).")
         else:
             st.info("Nenhuma planilha vinculada a este setor.")
