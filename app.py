@@ -158,9 +158,14 @@ else:
         st.subheader("⚙️ Painel do Administrador")
         st.caption("Gerencie usuários, permissões e adicione novas planilhas/setores em tempo real.")
 
-        tab1, tab2 = st.tabs(["➕ Adicionar/Editar Planilha", "👤 Adicionar/Editar Usuário"])
+        tab_planilhas, tab_cadastrar_usr, tab_gerenciar_usr = st.tabs([
+            "➕ Cadastrar Planilha", 
+            "👤 Cadastrar Usuário", 
+            "📋 Gerenciar / Deletar Usuários"
+        ])
 
-        with tab1:
+        # SUB-ABA 1: CADASTRAR PLANILHA
+        with tab_planilhas:
             st.markdown("### Cadastrar Nova Planilha")
             setores_existentes = list(PLANILHAS_POR_SETOR.keys())
             novo_setor_check = st.checkbox("Criar um novo setor")
@@ -181,12 +186,13 @@ else:
                     PLANILHAS_POR_SETOR[setor_dest][nome_planilha] = id_planilha_input
                     dados_sistema["planilhas"] = PLANILHAS_POR_SETOR
                     salvar_dados(dados_sistema)
-                    st.success(f"Planilha '{nome_planilha}' adicionada com sucesso ao setor '{setor_dest}'!")
+                    st.success(f"Planilha '{nome_planilha}' adicionada ao setor '{setor_dest}'!")
                     st.rerun()
                 else:
                     st.error("Preencha todos os campos para salvar a planilha.")
 
-        with tab2:
+        # SUB-ABA 2: CADASTRAR USUÁRIO
+        with tab_cadastrar_usr:
             st.markdown("### Cadastrar Novo Usuário")
             novo_login = st.text_input("Login do Usuário (ex: joao)").strip().lower()
             nova_senha = st.text_input("Senha Inicial").strip()
@@ -198,18 +204,56 @@ else:
 
             if st.button("Salvar Usuário"):
                 if novo_login and nova_senha and nome_completo and setores_usuario:
-                    USUARIOS[novo_login] = {
-                        "senha": nova_senha,
-                        "nome": nome_completo,
-                        "setores": setores_usuario,
-                        "e_admin": e_admin_check
-                    }
-                    dados_sistema["usuarios"] = USUARIOS
-                    salvar_dados(dados_sistema)
-                    st.success(f"Usuário '{novo_login}' cadastrado com sucesso!")
-                    st.rerun()
+                    if novo_login in USUARIOS:
+                        st.error("Este login já existe. Escolha outro ou remova o usuário existente.")
+                    else:
+                        USUARIOS[novo_login] = {
+                            "senha": nova_senha,
+                            "nome": nome_completo,
+                            "setores": setores_usuario,
+                            "e_admin": e_admin_check
+                        }
+                        dados_sistema["usuarios"] = USUARIOS
+                        salvar_dados(dados_sistema)
+                        st.success(f"Usuário '{novo_login}' cadastrado com sucesso!")
+                        st.rerun()
                 else:
                     st.error("Preencha todos os campos do usuário.")
+
+        # SUB-ABA 3: GERENCIAR / DELETAR USUÁRIOS
+        with tab_gerenciar_usr:
+            st.markdown("### Usuários Cadastrados no Sistema")
+            st.caption("Abaixo estão listados todos os usuários com acesso ao sistema. Você pode excluir acessos antigos.")
+
+            col_usr, col_nome, col_setores, col_admin, col_acao = st.columns([1, 1.5, 2, 1, 1])
+            
+            # Cabeçalhos da tabela
+            col_usr.markdown("**Login**")
+            col_nome.markdown("**Nome**")
+            col_setores.markdown("**Setores Permitidos**")
+            col_admin.markdown("**É Admin?**")
+            col_acao.markdown("**Ação**")
+            
+            st.markdown("---")
+
+            for login, info in list(USUARIOS.items()):
+                c_login, c_nome, c_set, c_adm, c_act = st.columns([1, 1.5, 2, 1, 1])
+                
+                c_login.write(f"`{login}`")
+                c_nome.write(info["nome"])
+                c_set.write(", ".join(info["setores"]))
+                c_adm.write("Sim" if info.get("e_admin", False) else "Não")
+
+                # Regra de proteção: O usuário logado não pode deletar a si próprio
+                if login == st.session_state["usuario_logado"]:
+                    c_act.caption("*(Você)*")
+                else:
+                    if c_act.button("🗑️ Deletar", key=f"btn_del_{login}"):
+                        del USUARIOS[login]
+                        dados_sistema["usuarios"] = USUARIOS
+                        salvar_dados(dados_sistema)
+                        st.success(f"Usuário '{login}' deletado com sucesso!")
+                        st.rerun()
 
     # --- ABA 3: VISUALIZAÇÃO PADRÃO DE PLANILHAS ---
     else:
