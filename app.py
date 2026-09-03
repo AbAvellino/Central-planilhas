@@ -1,10 +1,11 @@
 import streamlit as st
 import streamlit.components.v1 as components
+import pandas as pd
 import json
 import os
 
 # ==============================================================================
-# CONFIGURAÇÃO DE PÁGINA E ESTILOS (TELA CHEIA E LAYOUT)
+# CONFIGURAÇÃO DE PÁGINA E ESTILOS
 # ==============================================================================
 st.set_page_config(
     page_title="Central Unificada de Planilhas",
@@ -14,31 +15,18 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        html, body, [data-testid="stAppViewContainer"] {
-            overflow: hidden;
-        }
-        .block-container {
-            padding-top: 0.3rem !important;
-            padding-bottom: 0rem !important;
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
-        }
+        html, body, [data-testid="stAppViewContainer"] { overflow: hidden; }
+        .block-container { padding-top: 0.3rem !important; padding-bottom: 0rem !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
-        
-        div[data-testid="column"] {
-            padding: 0px 4px !important;
-        }
-        .stButton>button {
-            width: 100%;
-            margin-top: 24px;
-        }
+        div[data-testid="column"] { padding: 0px 4px !important; }
+        .stButton>button { width: 100%; margin-top: 24px; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# GESTÃO DE PERSISTÊNCIA DE DADOS (JSON)
+# FUNÇÕES OTIMIZADAS PARA OMITIR GARGALOS (CACHE DE DADOS)
 # ==============================================================================
 ARQUIVO_DADOS = "dados_sistema.json"
 
@@ -54,12 +42,6 @@ DADOS_INICIAIS = {
             "senha": "456",
             "nome": "Operador de Almoxarifado",
             "setores": ["Almoxarifado"],
-            "e_admin": False
-        },
-        "patio": {
-            "senha": "789",
-            "nome": "Operador do Pátio",
-            "setores": ["Containers"],
             "e_admin": False
         }
     },
@@ -88,6 +70,20 @@ def salvar_dados(dados):
 dados_sistema = carregar_dados()
 USUARIOS = dados_sistema["usuarios"]
 PLANILHAS_POR_SETOR = dados_sistema["planilhas"]
+
+# Função de leitura de Excel em Cache (Evita gargalos e travamentos ao ler arquivos grandes)
+@st.cache_data(ttl=300)  # Mantém o dado em cache na memória por 5 minutos
+def carregar_dados_excel_publico(sheet_id):
+    """
+    Carrega dados de uma aba do Google Sheets diretamente em um DataFrame Pandas.
+    Não trava a interface e permite manipulação direta de relatórios em alta velocidade.
+    """
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    try:
+        df = pd.read_csv(url)
+        return df
+    except Exception as e:
+        return None
 
 # ==============================================================================
 # CONTROLE DE SESSÃO / LOGIN
@@ -124,7 +120,7 @@ else:
     with c_setor:
         setor_selecionado = st.selectbox("🏢 Setor:", setores_permitidos)
         
-    # --- ABA 1: VISÃO GERAL ---
+    # --- VISÃO GERAL ---
     if setor_selecionado == "Visão Geral":
         with c_planilha:
             st.selectbox("📁 Planilha:", ["Painel Consolidado"], disabled=True)
@@ -136,15 +132,13 @@ else:
                 
         st.markdown("---")
         st.subheader("📊 Visão Geral / Dashboard Central")
-        st.caption("Resumo rápido dos indicadores operacionais de todos os setores.")
-        
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Ferramentas Emprestadas", "18", delta="+2 hoje")
         m2.metric("Itens em Manutenção", "4", delta="-1 semana")
         m3.metric("Containers no Pátio", "12", delta="0")
         m4.metric("Conferências Pendentes", "3", delta="-5", delta_color="inverse")
 
-    # --- ABA 2: PAINEL ADMIN (ADMINISTRAÇÃO DE USUÁRIOS E PLANILHAS) ---
+    # --- PAINEL ADMIN ---
     elif setor_selecionado == "Painel Admin":
         with c_planilha:
             st.selectbox("📁 Planilha:", ["Gestão do Sistema"], disabled=True)
@@ -156,7 +150,6 @@ else:
 
         st.markdown("---")
         st.subheader("⚙️ Painel do Administrador")
-        st.caption("Gerencie usuários, permissões e adicione novas planilhas/setores em tempo real.")
 
         tab_planilhas, tab_cadastrar_usr, tab_gerenciar_usr = st.tabs([
             "➕ Cadastrar Planilha", 
@@ -164,87 +157,53 @@ else:
             "📋 Gerenciar / Deletar Usuários"
         ])
 
-        # SUB-ABA 1: CADASTRAR PLANILHA
         with tab_planilhas:
             st.markdown("### Cadastrar Nova Planilha")
             setores_existentes = list(PLANILHAS_POR_SETOR.keys())
             novo_setor_check = st.checkbox("Criar um novo setor")
-            
-            if novo_setor_check:
-                setor_dest = st.text_input("Nome do Novo Setor").strip()
-            else:
-                setor_dest = st.selectbox("Selecionar Setor Existente", setores_existentes)
-
+            setor_dest = st.text_input("Nome do Novo Setor").strip() if novo_setor_check else st.selectbox("Selecionar Setor Existente", setores_existentes)
             nome_planilha = st.text_input("Nome da Planilha").strip()
-            id_planilha_input = st.text_input("ID do Google Sheets (código da URL)").strip()
+            id_planilha_input = st.text_input("ID do Google Sheets").strip()
 
             if st.button("Salvar Planilha"):
                 if setor_dest and nome_planilha and id_planilha_input:
                     if setor_dest not in PLANILHAS_POR_SETOR:
                         PLANILHAS_POR_SETOR[setor_dest] = {}
-                    
                     PLANILHAS_POR_SETOR[setor_dest][nome_planilha] = id_planilha_input
                     dados_sistema["planilhas"] = PLANILHAS_POR_SETOR
                     salvar_dados(dados_sistema)
-                    st.success(f"Planilha '{nome_planilha}' adicionada ao setor '{setor_dest}'!")
+                    st.success(f"Planilha '{nome_planilha}' adicionada!")
                     st.rerun()
-                else:
-                    st.error("Preencha todos os campos para salvar a planilha.")
 
-        # SUB-ABA 2: CADASTRAR USUÁRIO
         with tab_cadastrar_usr:
             st.markdown("### Cadastrar Novo Usuário")
-            novo_login = st.text_input("Login do Usuário (ex: joao)").strip().lower()
+            novo_login = st.text_input("Login (ex: joao)").strip().lower()
             nova_senha = st.text_input("Senha Inicial").strip()
-            nome_completo = st.text_input("Nome Exibido (ex: João Silva)").strip()
-            
+            nome_completo = st.text_input("Nome Exibido").strip()
             todos_setores = ["Visão Geral"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
             setores_usuario = st.multiselect("Setores Permitidos", todos_setores)
             e_admin_check = st.checkbox("Tornar Administrador")
 
             if st.button("Salvar Usuário"):
                 if novo_login and nova_senha and nome_completo and setores_usuario:
-                    if novo_login in USUARIOS:
-                        st.error("Este login já existe. Escolha outro ou remova o usuário existente.")
-                    else:
-                        USUARIOS[novo_login] = {
-                            "senha": nova_senha,
-                            "nome": nome_completo,
-                            "setores": setores_usuario,
-                            "e_admin": e_admin_check
-                        }
-                        dados_sistema["usuarios"] = USUARIOS
-                        salvar_dados(dados_sistema)
-                        st.success(f"Usuário '{novo_login}' cadastrado com sucesso!")
-                        st.rerun()
-                else:
-                    st.error("Preencha todos os campos do usuário.")
+                    USUARIOS[novo_login] = {
+                        "senha": nova_senha,
+                        "nome": nome_completo,
+                        "setores": setores_usuario,
+                        "e_admin": e_admin_check
+                    }
+                    dados_sistema["usuarios"] = USUARIOS
+                    salvar_dados(dados_sistema)
+                    st.success(f"Usuário '{novo_login}' cadastrado!")
+                    st.rerun()
 
-        # SUB-ABA 3: GERENCIAR / DELETAR USUÁRIOS
         with tab_gerenciar_usr:
-            st.markdown("### Usuários Cadastrados no Sistema")
-            st.caption("Abaixo estão listados todos os usuários com acesso ao sistema. Você pode excluir acessos antigos.")
-
-            col_usr, col_nome, col_setores, col_admin, col_acao = st.columns([1, 1.5, 2, 1, 1])
-            
-            # Cabeçalhos da tabela
-            col_usr.markdown("**Login**")
-            col_nome.markdown("**Nome**")
-            col_setores.markdown("**Setores Permitidos**")
-            col_admin.markdown("**É Admin?**")
-            col_acao.markdown("**Ação**")
-            
-            st.markdown("---")
-
+            st.markdown("### Usuários Cadastrados")
             for login, info in list(USUARIOS.items()):
-                c_login, c_nome, c_set, c_adm, c_act = st.columns([1, 1.5, 2, 1, 1])
-                
+                c_login, c_nome, c_set, c_act = st.columns([1, 1.5, 2, 1])
                 c_login.write(f"`{login}`")
                 c_nome.write(info["nome"])
                 c_set.write(", ".join(info["setores"]))
-                c_adm.write("Sim" if info.get("e_admin", False) else "Não")
-
-                # Regra de proteção: O usuário logado não pode deletar a si próprio
                 if login == st.session_state["usuario_logado"]:
                     c_act.caption("*(Você)*")
                 else:
@@ -252,10 +211,9 @@ else:
                         del USUARIOS[login]
                         dados_sistema["usuarios"] = USUARIOS
                         salvar_dados(dados_sistema)
-                        st.success(f"Usuário '{login}' deletado com sucesso!")
                         st.rerun()
 
-    # --- ABA 3: VISUALIZAÇÃO PADRÃO DE PLANILHAS ---
+    # --- EXIBIÇÃO DE PLANILHAS (COM OPÇÃO DE EMBED OU TABELA RÁPIDA) ---
     else:
         planilhas_do_setor = PLANILHAS_POR_SETOR.get(setor_selecionado, {})
         
@@ -284,13 +242,23 @@ else:
                 st.rerun()
 
         if planilhas_do_setor:
-            iframe_code = f"""
-            <iframe 
-                src="{url_google_sheets}" 
-                style="width: 100%; height: 84vh; border: none;"
-                allow="clipboard-read; clipboard-write">
-            </iframe>
-            """
-            components.html(iframe_code, height=790, scrolling=False)
+            modo_view = st.radio("Modo de Exibição:", ["Editor Google (Iframe)", "Visualizador Rápido de Dados (Alta Performance)"], horizontal=True)
+            
+            if modo_view == "Editor Google (Iframe)":
+                iframe_code = f"""
+                <iframe 
+                    src="{url_google_sheets}" 
+                    style="width: 100%; height: 80vh; border: none;"
+                    allow="clipboard-read; clipboard-write">
+                </iframe>
+                """
+                components.html(iframe_code, height=750, scrolling=False)
+            else:
+                st.caption("⚡ Dados carregados via Cache em alta performance. Atualiza a cada 5 minutos sem travar o navegador.")
+                df_dados = carregar_dados_excel_publico(id_planilha)
+                if df_dados is not None:
+                    st.dataframe(df_dados, use_container_width=True, height=600)
+                else:
+                    st.warning("Não foi possível ler os dados diretamente. Certifique-se de que a planilha está pública para leitura.")
         else:
-            st.info("Nenhuma planilha vinculada a este setor ainda. Solicite ao Administrador para cadastrar.")
+            st.info("Nenhuma planilha vinculada a este setor.")
