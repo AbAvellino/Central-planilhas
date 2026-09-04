@@ -6,7 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==============================================================================
-# CONFIGURAÇÃO DE PÁGINA E ESTILOS
+# CONFIGURAÇÃO DE PÁGINA E ESTILOS (AJUSTADO PARA EVITAR SALTO DE ROLAGEM)
 # ==============================================================================
 st.set_page_config(
     page_title="Central Unificada de Planilhas",
@@ -16,7 +16,13 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        .block-container { padding-top: 0.5rem !important; padding-bottom: 0rem !important; padding-left: 0.8rem !important; padding-right: 0.8rem !important; }
+        /* Ajuste do espaçamento interno sem bloquear a rolagem da página */
+        .block-container { 
+            padding-top: 1rem !important; 
+            padding-bottom: 1rem !important; 
+            padding-left: 1rem !important; 
+            padding-right: 1rem !important; 
+        }
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
