@@ -83,14 +83,23 @@ SCOPES = [
 @st.cache_resource
 def conectar_google_api():
     """Autentica com o Google Drive/Sheets usando a Service Account."""
-    # Prioridade 1: Arquivo chave.json local
+    # Prioridade 1: Arquivo chave.json local (Desenvolvimento)
     if os.path.exists("chave.json"):
         creds = Credentials.from_service_account_file("chave.json", scopes=SCOPES)
         return gspread.authorize(creds)
-    # Prioridade 2: Secrets do Streamlit Cloud
+    
+    # Prioridade 2: Secrets do Streamlit Cloud (Produção)
     elif "gcp_service_account" in st.secrets:
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
+        # Converte o AttrDict do Streamlit em dicionário padrão
+        credentials_info = dict(st.secrets["gcp_service_account"])
+        
+        # Garante a formatação correta de quebras de linha na private_key
+        if "private_key" in credentials_info:
+            credentials_info["private_key"] = credentials_info["private_key"].replace("\\n", "\n")
+            
+        creds = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
         return gspread.authorize(creds)
+        
     return None
 
 client_gspread = conectar_google_api()
@@ -99,7 +108,7 @@ client_gspread = conectar_google_api()
 def ler_planilha_api(spreadsheet_id):
     """Lê os dados da primeira aba da planilha usando a Service Account."""
     if not client_gspread:
-        st.error("Credenciais do Google Cloud não encontradas (`chave.json`).")
+        st.error("Credenciais do Google Cloud não encontradas (`chave.json` ou `st.secrets`).")
         return None
     try:
         sheet = client_gspread.open_by_key(spreadsheet_id).sheet1
@@ -285,7 +294,7 @@ else:
             if df_dados is not None:
                 st.caption("⚡ **Modo Nativo via API**: Você pode editar os valores na tabela abaixo e salvar direto no Google Sheets.")
                 
-                # Editor de dados nativo do Streamlit (Muito mais leve que o iframe)
+                # Editor de dados nativo do Streamlit
                 df_editado = st.data_editor(df_dados, use_container_width=True, height=550, num_rows="dynamic")
                 
                 col_salvar, col_vazio = st.columns([1, 3])
