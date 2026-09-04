@@ -100,9 +100,9 @@ def registrar_log(usuario, acao, detalhe):
         "acao": acao,
         "detalhe": detalhe
     }
-    logs.insert(0, novo_registro) # Mais recentes primeiro
+    logs.insert(0, novo_registro)
     with open(ARQUIVO_LOGS, "w", encoding="utf-8") as f:
-        json.dump(logs[:200], f, ensure_ascii=False, indent=4) # Mantém os últimos 200 logs
+        json.dump(logs[:200], f, ensure_ascii=False, indent=4)
 
 dados_sistema = carregar_dados()
 USUARIOS = dados_sistema["usuarios"]
@@ -195,11 +195,11 @@ if st.session_state["usuario_logado"] is None:
                 if usuario in USUARIOS:
                     senha_armazenada = USUARIOS[usuario]["senha"]
                     
-                    # Compatibilidade: verifica se a senha é o hash ou se ainda está em texto puro no JSON antigo
+                    # Compatibilidade com senhas em hash ou texto puro
                     senha_valida = verificar_senha(senha, senha_armazenada) or (senha == senha_armazenada)
                     
                     if senha_valida:
-                        # Se ainda estava em texto puro, atualiza automaticamente para o hash seguro
+                        # Migração automática para hash caso estivesse em texto puro
                         if senha == senha_armazenada:
                             USUARIOS[usuario]["senha"] = hash_senha(senha)
                             dados_sistema["usuarios"] = USUARIOS
@@ -293,7 +293,7 @@ else:
         tab_planilhas, tab_cadastrar_usr, tab_gerenciar_usr, tab_logs = st.tabs([
             "➕ Cadastrar Planilha", 
             "👤 Cadastrar Novo Usuário", 
-            "📋 Gerenciar Permissões",
+            "📋 Gerenciar / Alterar / Excluir Usuários",
             "📜 Logs de Auditoria"
         ])
 
@@ -342,28 +342,61 @@ else:
                     st.success(f"Usuário '{novo_login}' cadastrado de forma segura!")
                     st.rerun()
 
+        # --- GERENCIAMENTO, ALTERAÇÃO DE SENHA E EXCLUSÃO DE USUÁRIOS ---
         with tab_gerenciar_usr:
-            st.markdown("### Gerenciar Acessos e Permissões")
+            st.markdown("### Gerenciar, Alterar e Excluir Usuários")
             todos_setores = ["Visão Geral", "Busca Global"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
 
             for login, info in list(USUARIOS.items()):
-                with st.expander(f"👤 **{info['nome']}** (`{login}`)", expanded=False):
-                    c_perm1, c_perm2, c_act = st.columns([2, 1, 1])
+                with st.expander(f"👤 **{info['nome']}** (`login: {login}`)", expanded=False):
+                    c_n, c_s = st.columns(2)
+                    with c_n:
+                        novo_nome_val = st.text_input("Nome do Usuário", value=info["nome"], key=f"nome_{login}")
+                    with c_s:
+                        nova_senha_val = st.text_input("Nova Senha (deixe em branco se não quiser alterar)", type="password", key=f"pwd_{login}")
+
+                    c_perm1, c_perm2, c_admin = st.columns([2, 1, 1])
                     with c_perm1:
                         novos_setores = st.multiselect("Setores liberados:", options=todos_setores, default=info["setores"], key=f"ms_{login}")
                     with c_perm2:
                         nova_perm = st.selectbox("Modo de Acesso:", ["Escrita", "Leitura"], index=0 if info.get("permissao","Escrita") == "Escrita" else 1, key=f"perm_{login}")
-                    with c_act:
-                        st.write("")
-                        st.write("")
-                        if st.button("💾 Atualizar", key=f"btn_up_{login}"):
+                    with c_admin:
+                        e_admin_val = st.checkbox("É Admin", value=info.get("e_admin", False), key=f"chk_admin_{login}")
+
+                    st.markdown("---")
+                    c_btn_save, c_btn_del = st.columns([2, 1])
+                    
+                    # SALVAR ALTERAÇÕES DO USUÁRIO
+                    with c_btn_save:
+                        if st.button("💾 Salvar Alterações do Usuário", key=f"btn_up_{login}"):
+                            USUARIOS[login]["nome"] = novo_nome_val
+                            if nova_senha_val.strip():
+                                USUARIOS[login]["senha"] = hash_senha(nova_senha_val.strip())
+                            
                             USUARIOS[login]["setores"] = novos_setores
                             USUARIOS[login]["permissao"] = nova_perm
+                            USUARIOS[login]["e_admin"] = e_admin_val
+                            
                             dados_sistema["usuarios"] = USUARIOS
                             salvar_dados(dados_sistema)
-                            registrar_log(st.session_state["usuario_logado"], "Alteração Permissão", f"Acessos do usuário '{login}' atualizados")
-                            st.success("Atualizado!")
+                            
+                            detalhe_msg = f"Dados/Senha do usuário '{login}' atualizados."
+                            registrar_log(st.session_state["usuario_logado"], "Alteração Usuário", detalhe_msg)
+                            st.success(f"Usuário '{login}' atualizado com sucesso!")
                             st.rerun()
+                    
+                    # EXCLUIR USUÁRIO
+                    with c_btn_del:
+                        if st.button("❌ Excluir Usuário", key=f"btn_del_{login}", type="secondary"):
+                            if login == st.session_state["usuario_logado"]:
+                                st.error("Você não pode excluir o seu próprio usuário logado!")
+                            else:
+                                del USUARIOS[login]
+                                dados_sistema["usuarios"] = USUARIOS
+                                salvar_dados(dados_sistema)
+                                registrar_log(st.session_state["usuario_logado"], "Exclusão Usuário", f"Usuário '{login}' foi excluído.")
+                                st.warning(f"Usuário '{login}' foi removido do sistema!")
+                                st.rerun()
 
         with tab_logs:
             st.markdown("### 📜 Histórico de Atividades / Auditoria")
