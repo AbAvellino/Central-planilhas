@@ -6,7 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==============================================================================
-# CONFIGURAÇÃO DE PÁGINA E ESTILOS (AJUSTADO PARA EVITAR SALTO DE ROLAGEM)
+# CONFIGURAÇÃO DE PÁGINA E ESTILOS CSS AVANÇADOS
 # ==============================================================================
 st.set_page_config(
     page_title="Central Unificada de Planilhas",
@@ -16,18 +16,64 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        /* Ajuste do espaçamento interno sem bloquear a rolagem da página */
+        /* 1. Remoção de espaçamentos padrão do Streamlit para tela cheia */
         .block-container { 
-            padding-top: 1rem !important; 
-            padding-bottom: 1rem !important; 
-            padding-left: 1rem !important; 
-            padding-right: 1rem !important; 
+            padding-top: 0rem !important; 
+            padding-bottom: 0rem !important; 
+            padding-left: 0.5rem !important; 
+            padding-right: 0.5rem !important; 
         }
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
-        div[data-testid="column"] { padding: 0px 4px !important; }
-        .stButton>button { width: 100%; margin-top: 24px; }
+        #MainMenu, footer, header { visibility: hidden; }
+
+        /* 2. Barra / Menu Flutuante no Topo (Hover to Reveal) */
+        .top-navbar-trigger {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 12px;
+            z-index: 99999;
+            background: rgba(0, 123, 255, 0.4);
+            transition: all 0.3s ease;
+        }
+
+        div[data-testid="stHorizontalBlock"]:has(div.top-bar-marker) {
+            position: fixed;
+            top: -120px;
+            left: 5%;
+            right: 5%;
+            z-index: 999999;
+            background: #1e1e2f;
+            border: 1px solid #33334d;
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+            padding: 12px 20px;
+            box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.5);
+            transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* Expande o menu ao passar o mouse na área superior */
+        div[data-testid="stHorizontalBlock"]:has(div.top-bar-marker):hover,
+        .top-navbar-trigger:hover + div {
+            top: 0px !important;
+        }
+
+        /* 3. Ajuste nos botões e seletores com ícones e destaque */
+        .stButton>button {
+            width: 100%;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        /* Dica flutuante para avisar o usuário */
+        .hover-hint {
+            text-align: center;
+            font-size: 11px;
+            color: #888;
+            margin-top: -5px;
+            margin-bottom: 5px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -87,9 +133,7 @@ SCOPES = [
 
 @st.cache_resource
 def conectar_google_api():
-    """Autentica com o Google Drive/Sheets usando a Service Account."""
     try:
-        # Prioridade 1: Secrets do Streamlit Cloud
         if "gcp_service_account" in st.secrets:
             credentials_info = dict(st.secrets["gcp_service_account"])
             if "private_key" in credentials_info:
@@ -97,15 +141,12 @@ def conectar_google_api():
             creds = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
             return gspread.authorize(creds)
             
-        # Prioridade 2: Arquivo chave.json local
         elif os.path.exists("chave.json"):
             creds = Credentials.from_service_account_file("chave.json", scopes=SCOPES)
             return gspread.authorize(creds)
             
         else:
-            st.error("⚠️ Nenhuma fonte de credencial encontrada (`st.secrets` ou `chave.json`).")
             return None
-
     except Exception as e:
         st.error(f"⚠️ Erro ao tentar autenticar na API do Google: {e}")
         return None
@@ -114,7 +155,6 @@ client_gspread = conectar_google_api()
 
 @st.cache_data(ttl=180)
 def ler_planilha_api(spreadsheet_id):
-    """Lê os dados da primeira aba da planilha usando a Service Account."""
     if not client_gspread:
         return None
     try:
@@ -126,7 +166,6 @@ def ler_planilha_api(spreadsheet_id):
         return None
 
 def salvar_alteracoes_api(spreadsheet_id, df_atualizado):
-    """Atualiza os dados da planilha no Google Sheets via API."""
     if not client_gspread:
         return False
     try:
@@ -150,13 +189,13 @@ if st.session_state["usuario_logado"] is None:
     c1, col_login, c2 = st.columns([1, 1.2, 1])
     
     with col_login:
-        st.title("🔒 Acesso ao Sistema")
-        st.caption("Digite suas credenciais para acessar as planilhas do seu setor.")
+        st.title("🔒 Central Unificada")
+        st.caption("Acesse com suas credenciais para visualizar e editar as planilhas.")
         
         with st.form("form_login"):
-            usuario = st.text_input("Usuário").strip().lower()
-            senha = st.text_input("Senha", type="password")
-            btn_entrar = st.form_submit_button("Entrar no Sistema")
+            usuario = st.text_input("👤 Usuário").strip().lower()
+            senha = st.text_input("🔑 Senha", type="password")
+            btn_entrar = st.form_submit_button("🚀 Entrar no Sistema")
             
             if btn_entrar:
                 if usuario in USUARIOS and USUARIOS[usuario]["senha"] == senha:
@@ -169,15 +208,20 @@ else:
     dados_usuario = USUARIOS[st.session_state["usuario_logado"]]
     setores_permitidos = dados_usuario["setores"]
     
-    c_setor, c_planilha, c_modo, c_user = st.columns([1, 1.3, 1.4, 0.8])
+    # Marcador para acionar a barra flutuante via CSS
+    st.markdown('<div class="top-navbar-trigger"></div>', unsafe_allow_html=True)
+    
+    # Barra de Navegação Flutuante
+    c_setor, c_planilha, c_modo, c_user = st.columns([1.2, 1.3, 1.5, 0.8])
     
     with c_setor:
-        setor_selecionado = st.selectbox("🏢 Setor:", setores_permitidos)
+        st.markdown('<div class="top-bar-marker"></div>', unsafe_allow_html=True)
+        setor_selecionado = st.selectbox("🏢 Setor / Área", setores_permitidos)
         
     # --- VISÃO GERAL ---
     if setor_selecionado == "Visão Geral":
         with c_planilha:
-            st.selectbox("📁 Planilha:", ["Painel Consolidado"], disabled=True)
+            st.selectbox("📁 Planilha", ["Painel Consolidado"], disabled=True)
         with c_modo:
             st.empty()
         with c_user:
@@ -186,18 +230,18 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
                 
-        st.markdown("---")
+        st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📊 Visão Geral / Dashboard Central")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Ferramentas Emprestadas", "18", delta="+2 hoje")
-        m2.metric("Itens em Manutenção", "4", delta="-1 semana")
-        m3.metric("Containers no Pátio", "12", delta="0")
-        m4.metric("Conferências Pendentes", "3", delta="-5", delta_color="inverse")
+        m1.metric("🛠️ Ferramentas Emprestadas", "18", delta="+2 hoje")
+        m2.metric("🔧 Itens em Manutenção", "4", delta="-1 semana")
+        m3.metric("📦 Containers no Pátio", "12", delta="0")
+        m4.metric("📋 Conferências Pendentes", "3", delta="-5", delta_color="inverse")
 
     # --- PAINEL ADMIN ---
     elif setor_selecionado == "Painel Admin":
         with c_planilha:
-            st.selectbox("📁 Planilha:", ["Gestão do Sistema"], disabled=True)
+            st.selectbox("📁 Planilha", ["Gestão do Sistema"], disabled=True)
         with c_modo:
             st.empty()
         with c_user:
@@ -206,13 +250,13 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
 
-        st.markdown("---")
+        st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("⚙️ Painel do Administrador")
 
         tab_planilhas, tab_cadastrar_usr, tab_gerenciar_usr = st.tabs([
             "➕ Cadastrar Planilha", 
             "👤 Cadastrar Usuário", 
-            "📋 Gerenciar / Deletar Usuários"
+            "📋 Gerenciar Usuários"
         ])
 
         with tab_planilhas:
@@ -223,7 +267,7 @@ else:
             nome_planilha = st.text_input("Nome da Planilha").strip()
             id_planilha_input = st.text_input("ID do Google Sheets").strip()
 
-            if st.button("Salvar Planilha"):
+            if st.button("💾 Salvar Planilha"):
                 if setor_dest and nome_planilha and id_planilha_input:
                     if setor_dest not in PLANILHAS_POR_SETOR:
                         PLANILHAS_POR_SETOR[setor_dest] = {}
@@ -242,7 +286,7 @@ else:
             setores_usuario = st.multiselect("Setores Permitidos", todos_setores)
             e_admin_check = st.checkbox("Tornar Administrador")
 
-            if st.button("Salvar Usuário"):
+            if st.button("👤 Salvar Usuário"):
                 if novo_login and nova_senha and nome_completo and setores_usuario:
                     USUARIOS[novo_login] = {
                         "senha": nova_senha,
@@ -271,22 +315,22 @@ else:
                         salvar_dados(dados_sistema)
                         st.rerun()
 
-    # --- OPERAÇÃO DE PLANILHAS (VISUALIZAÇÃO COMPLETA E EDIÇÃO NATIVA) ---
+    # --- OPERAÇÃO DE PLANILHAS (TELA CHEIA MAXIMIZADA) ---
     else:
         planilhas_do_setor = PLANILHAS_POR_SETOR.get(setor_selecionado, {})
         
         with c_planilha:
             if planilhas_do_setor:
-                planilha_selecionada = st.selectbox("📁 Planilha:", list(planilhas_do_setor.keys()))
+                planilha_selecionada = st.selectbox("📁 Planilha", list(planilhas_do_setor.keys()))
                 id_planilha = planilhas_do_setor[planilha_selecionada]
             else:
-                st.selectbox("📁 Planilha:", ["Nenhuma planilha cadastrada"], disabled=True)
+                st.selectbox("📁 Planilha", ["Nenhuma planilha cadastrada"], disabled=True)
                 id_planilha = None
             
         with c_modo:
             modo_visualizacao = st.radio(
-                "🖥️ Modo de Exibição:", 
-                ["Google Sheets Oficial (Completo)", "Tabela Nativa (API Rápida)"],
+                "🖥️ Modo de Exibição", 
+                ["🌐 Google Sheets Oficial (Completo)", "⚡ Tabela Nativa (API Rápida)"],
                 horizontal=True
             )
 
@@ -296,25 +340,27 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
 
-        st.markdown("---")
+        # Dica visual indicando que o menu se esconde
+        st.markdown('<p class="hover-hint">⬆️ Passe o mouse no topo da tela para reexibir os menus de seleção ⬆️</p>', unsafe_allow_html=True)
 
         if id_planilha:
-            # MODO 1: GOOGLE SHEETS OFICIAL (MANTÉM CORES, ÍCONES, FÓRMULAS E PERMITE EDIÇÃO)
-            if modo_visualizacao == "Google Sheets Oficial (Completo)":
+            # MODO 1: GOOGLE SHEETS OFICIAL (MAXIMIZADO)
+            if modo_visualizacao == "🌐 Google Sheets Oficial (Completo)":
                 embed_url = f"https://docs.google.com/spreadsheets/d/{id_planilha}/edit"
                 
+                # Renderiza o iFrame ocupando quase 90% da altura da tela (850px)
                 st.components.v1.html(
-                    f'<iframe src="{embed_url}" width="100%" height="750" frameborder="0" style="border:1px solid #444; border-radius:8px;"></iframe>',
-                    height=760
+                    f'<iframe src="{embed_url}" width="100%" height="850" frameborder="0" style="border:1px solid #333; border-radius:8px;"></iframe>',
+                    height=855
                 )
             
             # MODO 2: EDIÇÃO RÁPIDA VIA API (TABELA STREAMLIT)
             else:
                 df_dados = ler_planilha_api(id_planilha)
                 if df_dados is not None:
-                    st.caption("⚡ **Modo Nativo via API**: Você pode editar os valores na tabela abaixo e salvar direto no Google Sheets.")
+                    st.caption("⚡ **Modo Nativo via API**: Edite os valores na tabela e clique em salvar.")
                     
-                    df_editado = st.data_editor(df_dados, use_container_width=True, height=550, num_rows="dynamic")
+                    df_editado = st.data_editor(df_dados, use_container_width=True, height=650, num_rows="dynamic")
                     
                     col_salvar, col_vazio = st.columns([1, 3])
                     with col_salvar:
