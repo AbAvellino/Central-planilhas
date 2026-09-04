@@ -73,7 +73,7 @@ USUARIOS = dados_sistema["usuarios"]
 PLANILHAS_POR_SETOR = dados_sistema["planilhas"]
 
 # ==============================================================================
-# CONEXÃO API GOOGLE SHEETS VIA GSPREAD (COM CACHE E MULTITAREFA)
+# CONEXÃO API GOOGLE SHEETS VIA GSPREAD (COM CACHE E DIAGNÓSTICO)
 # ==============================================================================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -83,24 +83,29 @@ SCOPES = [
 @st.cache_resource
 def conectar_google_api():
     """Autentica com o Google Drive/Sheets usando a Service Account."""
-    # Prioridade 1: Arquivo chave.json local (Desenvolvimento)
-    if os.path.exists("chave.json"):
-        creds = Credentials.from_service_account_file("chave.json", scopes=SCOPES)
-        return gspread.authorize(creds)
-    
-    # Prioridade 2: Secrets do Streamlit Cloud (Produção)
-    elif "gcp_service_account" in st.secrets:
-        # Converte o AttrDict do Streamlit em dicionário padrão
-        credentials_info = dict(st.secrets["gcp_service_account"])
+    try:
+        # Prioridade 1: Arquivo chave.json local (Desenvolvimento)
+        if os.path.exists("chave.json"):
+            creds = Credentials.from_service_account_file("chave.json", scopes=SCOPES)
+            return gspread.authorize(creds)
         
-        # Garante a formatação correta de quebras de linha na private_key
-        if "private_key" in credentials_info:
-            credentials_info["private_key"] = credentials_info["private_key"].replace("\\n", "\n")
+        # Prioridade 2: Secrets do Streamlit Cloud (Produção)
+        elif "gcp_service_account" in st.secrets:
+            credentials_info = dict(st.secrets["gcp_service_account"])
             
-        creds = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
-        return gspread.authorize(creds)
-        
-    return None
+            if "private_key" in credentials_info:
+                credentials_info["private_key"] = credentials_info["private_key"].replace("\\n", "\n")
+                
+            creds = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
+            return gspread.authorize(creds)
+            
+        else:
+            st.error("⚠️ Nenhuma fonte de credencial encontrada (`chave.json` ou `st.secrets`).")
+            return None
+
+    except Exception as e:
+        st.error(f"⚠️ Erro ao tentar autenticar na API do Google: {e}")
+        return None
 
 client_gspread = conectar_google_api()
 
@@ -108,7 +113,6 @@ client_gspread = conectar_google_api()
 def ler_planilha_api(spreadsheet_id):
     """Lê os dados da primeira aba da planilha usando a Service Account."""
     if not client_gspread:
-        st.error("Credenciais do Google Cloud não encontradas (`chave.json` ou `st.secrets`).")
         return None
     try:
         sheet = client_gspread.open_by_key(spreadsheet_id).sheet1
@@ -304,6 +308,6 @@ else:
                             st.success("Planilha sincronizada com sucesso!")
                             st.rerun()
             else:
-                st.warning("Não foi possível carregar a planilha. Verifique se compartilhou a planilha como Editor com o e-mail da Service Account (`chave.json`).")
+                st.warning("Não foi possível carregar a planilha. Verifique se compartilhou a planilha como Editor com o e-mail da Service Account.")
         else:
             st.info("Nenhuma planilha vinculada a este setor.")
