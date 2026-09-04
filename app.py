@@ -6,7 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==============================================================================
-# CONFIGURAÇÃO DE PÁGINA E ESTILOS CSS
+# CONFIGURAÇÃO DE PÁGINA E ESTILOS CSS FIXOS
 # ==============================================================================
 st.set_page_config(
     page_title="Central Unificada de Planilhas",
@@ -16,59 +16,16 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        /* 1. Ocupação máxima da tela */
+        /* Ajuste simples de espaçamento para otimizar espaço em tela */
         .block-container { 
-            padding-top: 0rem !important; 
+            padding-top: 1rem !important; 
             padding-bottom: 0rem !important; 
-            padding-left: 0.5rem !important; 
-            padding-right: 0.5rem !important; 
+            padding-left: 1rem !important; 
+            padding-right: 1rem !important; 
         }
         #MainMenu, footer, header { visibility: hidden; }
 
-        /* 2. Botão Flutuante no Canto Superior Direito */
-        .top-right-toggle-btn {
-            position: fixed;
-            top: 10px;
-            right: 20px;
-            z-index: 9999999;
-            background-color: #0d6efd;
-            color: #ffffff;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: bold;
-            box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        .top-right-toggle-btn:hover {
-            background-color: #0b5ed7;
-            transform: scale(1.05);
-        }
-
-        /* 3. Painel de Controle Flutuante */
-        div[data-testid="stHorizontalBlock"]:has(div.top-bar-marker) {
-            position: fixed;
-            top: -160px;
-            left: 2%;
-            right: 2%;
-            z-index: 999999;
-            background: #1e1e2f;
-            border: 1px solid #33334d;
-            border-bottom-left-radius: 12px;
-            border-bottom-right-radius: 12px;
-            padding: 15px 20px;
-            box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.6);
-            transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        /* Exibe o painel flutuante ao passar o mouse na área superior direita */
-        div[data-testid="stHorizontalBlock"]:has(div.top-bar-marker):hover,
-        .top-right-toggle-btn:hover + div[data-testid="stHorizontalBlock"]:has(div.top-bar-marker) {
-            top: 0px !important;
-        }
-
-        /* 4. Estilização dos Botões */
+        /* Estilização padrão e limpa para os botões */
         .stButton>button {
             width: 100%;
             border-radius: 8px;
@@ -208,14 +165,10 @@ else:
     dados_usuario = USUARIOS[st.session_state["usuario_logado"]]
     setores_permitidos = dados_usuario["setores"]
     
-    # 1. Botão visual no canto superior direito
-    st.markdown('<div class="top-right-toggle-btn">⚙️ Painel de Opções 🔽</div>', unsafe_allow_html=True)
-    
-    # 2. Barra Flutuante de Seleção
+    # BARRA FIXA SUPERIOR DE SELEÇÃO
     c_setor, c_planilha, c_modo, c_user = st.columns([1.2, 1.3, 1.5, 0.8])
     
     with c_setor:
-        st.markdown('<div class="top-bar-marker"></div>', unsafe_allow_html=True)
         setor_selecionado = st.selectbox("🏢 Setor / Área", setores_permitidos)
         
     # --- VISÃO GERAL ---
@@ -230,7 +183,7 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
                 
-        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("---")
         st.subheader("📊 Visão Geral / Dashboard Central")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("🛠️ Ferramentas Emprestadas", "18", delta="+2 hoje")
@@ -250,7 +203,7 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
 
-        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("---")
         st.subheader("⚙️ Painel do Administrador & Permissões")
 
         tab_planilhas, tab_cadastrar_usr, tab_gerenciar_usr = st.tabs([
@@ -283,7 +236,6 @@ else:
             nova_senha = st.text_input("Senha Inicial").strip()
             nome_completo = st.text_input("Nome Exibido").strip()
             
-            # Escolha exata de quais setores este usuário pode acessar
             todos_setores = ["Visão Geral"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
             setores_usuario = st.multiselect("Selecione os Setores que esta pessoa terá permissão para visualizar:", todos_setores, default=["Visão Geral"])
             e_admin_check = st.checkbox("Tornar Administrador do Sistema")
@@ -359,13 +311,15 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
 
+        st.markdown("---")
+
         if id_planilha:
             # MODO 1: GOOGLE SHEETS OFICIAL
             if modo_visualizacao == "🌐 Google Sheets Oficial (Completo)":
                 embed_url = f"https://docs.google.com/spreadsheets/d/{id_planilha}/edit"
                 st.components.v1.html(
-                    f'<iframe src="{embed_url}" width="100%" height="860" frameborder="0" style="border:1px solid #333; border-radius:8px;"></iframe>',
-                    height=865
+                    f'<iframe src="{embed_url}" width="100%" height="750" frameborder="0" style="border:1px solid #333; border-radius:8px;"></iframe>',
+                    height=755
                 )
             
             # MODO 2: EDIÇÃO RÁPIDA VIA API
@@ -373,7 +327,7 @@ else:
                 df_dados = ler_planilha_api(id_planilha)
                 if df_dados is not None:
                     st.caption("⚡ **Modo Nativo via API**: Edite os valores na tabela e clique em salvar.")
-                    df_editado = st.data_editor(df_dados, use_container_width=True, height=650, num_rows="dynamic")
+                    df_editado = st.data_editor(df_dados, use_container_width=True, height=600, num_rows="dynamic")
                     
                     col_salvar, col_vazio = st.columns([1, 3])
                     with col_salvar:
