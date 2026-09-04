@@ -6,7 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==============================================================================
-# CONFIGURAÇÃO DE PÁGINA E ESTILOS CSS AVANÇADOS
+# CONFIGURAÇÃO DE PÁGINA E ESTILOS CSS
 # ==============================================================================
 st.set_page_config(
     page_title="Central Unificada de Planilhas",
@@ -16,7 +16,7 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        /* 1. Remoção de espaçamentos padrão do Streamlit para tela cheia */
+        /* 1. Ocupação máxima da tela */
         .block-container { 
             padding-top: 0rem !important; 
             padding-bottom: 0rem !important; 
@@ -25,54 +25,54 @@ st.markdown("""
         }
         #MainMenu, footer, header { visibility: hidden; }
 
-        /* 2. Barra / Menu Flutuante no Topo (Hover to Reveal) */
-        .top-navbar-trigger {
+        /* 2. Botão Flutuante no Canto Superior Direito */
+        .top-right-toggle-btn {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 12px;
-            z-index: 99999;
-            background: rgba(0, 123, 255, 0.4);
+            top: 10px;
+            right: 20px;
+            z-index: 9999999;
+            background-color: #0d6efd;
+            color: #ffffff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
+            cursor: pointer;
             transition: all 0.3s ease;
         }
+        .top-right-toggle-btn:hover {
+            background-color: #0b5ed7;
+            transform: scale(1.05);
+        }
 
+        /* 3. Painel de Controle Flutuante */
         div[data-testid="stHorizontalBlock"]:has(div.top-bar-marker) {
             position: fixed;
-            top: -120px;
-            left: 5%;
-            right: 5%;
+            top: -160px;
+            left: 2%;
+            right: 2%;
             z-index: 999999;
             background: #1e1e2f;
             border: 1px solid #33334d;
             border-bottom-left-radius: 12px;
             border-bottom-right-radius: 12px;
-            padding: 12px 20px;
-            box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.5);
+            padding: 15px 20px;
+            box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.6);
             transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
-        /* Expande o menu ao passar o mouse na área superior */
+        /* Exibe o painel flutuante ao passar o mouse na área superior direita */
         div[data-testid="stHorizontalBlock"]:has(div.top-bar-marker):hover,
-        .top-navbar-trigger:hover + div {
+        .top-right-toggle-btn:hover + div[data-testid="stHorizontalBlock"]:has(div.top-bar-marker) {
             top: 0px !important;
         }
 
-        /* 3. Ajuste nos botões e seletores com ícones e destaque */
+        /* 4. Estilização dos Botões */
         .stButton>button {
             width: 100%;
             border-radius: 8px;
             font-weight: 600;
-            font-size: 15px;
-        }
-
-        /* Dica flutuante para avisar o usuário */
-        .hover-hint {
-            text-align: center;
-            font-size: 11px;
-            color: #888;
-            margin-top: -5px;
-            margin-bottom: 5px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -190,7 +190,7 @@ if st.session_state["usuario_logado"] is None:
     
     with col_login:
         st.title("🔒 Central Unificada")
-        st.caption("Acesse com suas credenciais para visualizar e editar as planilhas.")
+        st.caption("Digite suas credenciais para acessar as planilhas do seu setor.")
         
         with st.form("form_login"):
             usuario = st.text_input("👤 Usuário").strip().lower()
@@ -208,10 +208,10 @@ else:
     dados_usuario = USUARIOS[st.session_state["usuario_logado"]]
     setores_permitidos = dados_usuario["setores"]
     
-    # Marcador para acionar a barra flutuante via CSS
-    st.markdown('<div class="top-navbar-trigger"></div>', unsafe_allow_html=True)
+    # 1. Botão visual no canto superior direito
+    st.markdown('<div class="top-right-toggle-btn">⚙️ Painel de Opções 🔽</div>', unsafe_allow_html=True)
     
-    # Barra de Navegação Flutuante
+    # 2. Barra Flutuante de Seleção
     c_setor, c_planilha, c_modo, c_user = st.columns([1.2, 1.3, 1.5, 0.8])
     
     with c_setor:
@@ -230,7 +230,7 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
                 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br><br>", unsafe_allow_html=True)
         st.subheader("📊 Visão Geral / Dashboard Central")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("🛠️ Ferramentas Emprestadas", "18", delta="+2 hoje")
@@ -250,17 +250,17 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("⚙️ Painel do Administrador")
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.subheader("⚙️ Painel do Administrador & Permissões")
 
         tab_planilhas, tab_cadastrar_usr, tab_gerenciar_usr = st.tabs([
             "➕ Cadastrar Planilha", 
-            "👤 Cadastrar Usuário", 
-            "📋 Gerenciar Usuários"
+            "👤 Cadastrar Novo Usuário", 
+            "📋 Gerenciar / Alterar Permissões"
         ])
 
         with tab_planilhas:
-            st.markdown("### Cadastrar Nova Planilha")
+            st.markdown("### Cadastrar Nova Planilha em um Setor")
             setores_existentes = list(PLANILHAS_POR_SETOR.keys())
             novo_setor_check = st.checkbox("Criar um novo setor")
             setor_dest = st.text_input("Nome do Novo Setor").strip() if novo_setor_check else st.selectbox("Selecionar Setor Existente", setores_existentes)
@@ -274,17 +274,19 @@ else:
                     PLANILHAS_POR_SETOR[setor_dest][nome_planilha] = id_planilha_input
                     dados_sistema["planilhas"] = PLANILHAS_POR_SETOR
                     salvar_dados(dados_sistema)
-                    st.success(f"Planilha '{nome_planilha}' adicionada!")
+                    st.success(f"Planilha '{nome_planilha}' vinculada ao setor '{setor_dest}' com sucesso!")
                     st.rerun()
 
         with tab_cadastrar_usr:
-            st.markdown("### Cadastrar Novo Usuário")
+            st.markdown("### Cadastrar Novo Usuário e Definir Acessos")
             novo_login = st.text_input("Login (ex: joao)").strip().lower()
             nova_senha = st.text_input("Senha Inicial").strip()
             nome_completo = st.text_input("Nome Exibido").strip()
+            
+            # Escolha exata de quais setores este usuário pode acessar
             todos_setores = ["Visão Geral"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
-            setores_usuario = st.multiselect("Setores Permitidos", todos_setores)
-            e_admin_check = st.checkbox("Tornar Administrador")
+            setores_usuario = st.multiselect("Selecione os Setores que esta pessoa terá permissão para visualizar:", todos_setores, default=["Visão Geral"])
+            e_admin_check = st.checkbox("Tornar Administrador do Sistema")
 
             if st.button("👤 Salvar Usuário"):
                 if novo_login and nova_senha and nome_completo and setores_usuario:
@@ -296,26 +298,43 @@ else:
                     }
                     dados_sistema["usuarios"] = USUARIOS
                     salvar_dados(dados_sistema)
-                    st.success(f"Usuário '{novo_login}' cadastrado!")
+                    st.success(f"Usuário '{novo_login}' cadastrado com acesso aos setores: {', '.join(setores_usuario)}!")
                     st.rerun()
 
         with tab_gerenciar_usr:
-            st.markdown("### Usuários Cadastrados")
-            for login, info in list(USUARIOS.items()):
-                c_login, c_nome, c_set, c_act = st.columns([1, 1.5, 2, 1])
-                c_login.write(f"`{login}`")
-                c_nome.write(info["nome"])
-                c_set.write(", ".join(info["setores"]))
-                if login == st.session_state["usuario_logado"]:
-                    c_act.caption("*(Você)*")
-                else:
-                    if c_act.button("🗑️ Deletar", key=f"btn_del_{login}"):
-                        del USUARIOS[login]
-                        dados_sistema["usuarios"] = USUARIOS
-                        salvar_dados(dados_sistema)
-                        st.rerun()
+            st.markdown("### Gerenciar Usuários e Alterar Visibilidade de Setores")
+            todos_setores = ["Visão Geral"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
 
-    # --- OPERAÇÃO DE PLANILHAS (TELA CHEIA MAXIMIZADA) ---
+            for login, info in list(USUARIOS.items()):
+                with st.expander(f"👤 **{info['nome']}** (`{login}`)", expanded=False):
+                    col_perm, col_botoes = st.columns([3, 1])
+                    
+                    with col_perm:
+                        novos_setores = st.multiselect(
+                            f"Setores com visibilidade liberada para {login}:",
+                            options=todos_setores,
+                            default=info["setores"],
+                            key=f"ms_setores_{login}"
+                        )
+                    
+                    with col_botoes:
+                        st.write("")
+                        st.write("")
+                        if st.button("💾 Atualizar Acessos", key=f"btn_update_{login}"):
+                            USUARIOS[login]["setores"] = novos_setores
+                            dados_sistema["usuarios"] = USUARIOS
+                            salvar_dados(dados_sistema)
+                            st.success("Permissões atualizadas!")
+                            st.rerun()
+                            
+                        if login != st.session_state["usuario_logado"]:
+                            if st.button("🗑️ Excluir Usuário", key=f"btn_del_{login}"):
+                                del USUARIOS[login]
+                                dados_sistema["usuarios"] = USUARIOS
+                                salvar_dados(dados_sistema)
+                                st.rerun()
+
+    # --- OPERAÇÃO DE PLANILHAS ---
     else:
         planilhas_do_setor = PLANILHAS_POR_SETOR.get(setor_selecionado, {})
         
@@ -324,7 +343,7 @@ else:
                 planilha_selecionada = st.selectbox("📁 Planilha", list(planilhas_do_setor.keys()))
                 id_planilha = planilhas_do_setor[planilha_selecionada]
             else:
-                st.selectbox("📁 Planilha", ["Nenhuma planilha cadastrada"], disabled=True)
+                st.selectbox("📁 Planilha", ["Nenhuma planilha cadastrada neste setor"], disabled=True)
                 id_planilha = None
             
         with c_modo:
@@ -340,26 +359,20 @@ else:
                 st.session_state["usuario_logado"] = None
                 st.rerun()
 
-        # Dica visual indicando que o menu se esconde
-        st.markdown('<p class="hover-hint">⬆️ Passe o mouse no topo da tela para reexibir os menus de seleção ⬆️</p>', unsafe_allow_html=True)
-
         if id_planilha:
-            # MODO 1: GOOGLE SHEETS OFICIAL (MAXIMIZADO)
+            # MODO 1: GOOGLE SHEETS OFICIAL
             if modo_visualizacao == "🌐 Google Sheets Oficial (Completo)":
                 embed_url = f"https://docs.google.com/spreadsheets/d/{id_planilha}/edit"
-                
-                # Renderiza o iFrame ocupando quase 90% da altura da tela (850px)
                 st.components.v1.html(
-                    f'<iframe src="{embed_url}" width="100%" height="850" frameborder="0" style="border:1px solid #333; border-radius:8px;"></iframe>',
-                    height=855
+                    f'<iframe src="{embed_url}" width="100%" height="860" frameborder="0" style="border:1px solid #333; border-radius:8px;"></iframe>',
+                    height=865
                 )
             
-            # MODO 2: EDIÇÃO RÁPIDA VIA API (TABELA STREAMLIT)
+            # MODO 2: EDIÇÃO RÁPIDA VIA API
             else:
                 df_dados = ler_planilha_api(id_planilha)
                 if df_dados is not None:
                     st.caption("⚡ **Modo Nativo via API**: Edite os valores na tabela e clique em salvar.")
-                    
                     df_editado = st.data_editor(df_dados, use_container_width=True, height=650, num_rows="dynamic")
                     
                     col_salvar, col_vazio = st.columns([1, 3])
