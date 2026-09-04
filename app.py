@@ -16,8 +16,7 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-        html, body, [data-testid="stAppViewContainer"] { overflow: hidden; }
-        .block-container { padding-top: 0.3rem !important; padding-bottom: 0rem !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+        .block-container { padding-top: 0.5rem !important; padding-bottom: 0rem !important; padding-left: 0.8rem !important; padding-right: 0.8rem !important; }
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
@@ -73,7 +72,7 @@ USUARIOS = dados_sistema["usuarios"]
 PLANILHAS_POR_SETOR = dados_sistema["planilhas"]
 
 # ==============================================================================
-# CONEXÃO API GOOGLE SHEETS VIA GSPREAD (COM CACHE E DIAGNÓSTICO)
+# CONEXÃO API GOOGLE SHEETS VIA GSPREAD
 # ==============================================================================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -84,23 +83,21 @@ SCOPES = [
 def conectar_google_api():
     """Autentica com o Google Drive/Sheets usando a Service Account."""
     try:
-        # Prioridade 1: Arquivo chave.json local (Desenvolvimento)
-        if os.path.exists("chave.json"):
-            creds = Credentials.from_service_account_file("chave.json", scopes=SCOPES)
-            return gspread.authorize(creds)
-        
-        # Prioridade 2: Secrets do Streamlit Cloud (Produção)
-        elif "gcp_service_account" in st.secrets:
+        # Prioridade 1: Secrets do Streamlit Cloud
+        if "gcp_service_account" in st.secrets:
             credentials_info = dict(st.secrets["gcp_service_account"])
-            
             if "private_key" in credentials_info:
                 credentials_info["private_key"] = credentials_info["private_key"].replace("\\n", "\n")
-                
             creds = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
             return gspread.authorize(creds)
             
+        # Prioridade 2: Arquivo chave.json local
+        elif os.path.exists("chave.json"):
+            creds = Credentials.from_service_account_file("chave.json", scopes=SCOPES)
+            return gspread.authorize(creds)
+            
         else:
-            st.error("⚠️ Nenhuma fonte de credencial encontrada (`chave.json` ou `st.secrets`).")
+            st.error("⚠️ Nenhuma fonte de credencial encontrada (`st.secrets` ou `chave.json`).")
             return None
 
     except Exception as e:
@@ -109,7 +106,7 @@ def conectar_google_api():
 
 client_gspread = conectar_google_api()
 
-@st.cache_data(ttl=180)  # Mantém os dados em cache por 3 minutos para evitar chamadas redundantes
+@st.cache_data(ttl=180)
 def ler_planilha_api(spreadsheet_id):
     """Lê os dados da primeira aba da planilha usando a Service Account."""
     if not client_gspread:
@@ -123,14 +120,14 @@ def ler_planilha_api(spreadsheet_id):
         return None
 
 def salvar_alteracoes_api(spreadsheet_id, df_atualizado):
-    """Atualiza os dados da planilha no Google Sheets."""
+    """Atualiza os dados da planilha no Google Sheets via API."""
     if not client_gspread:
         return False
     try:
         sheet = client_gspread.open_by_key(spreadsheet_id).sheet1
         sheet.clear()
         sheet.update([df_atualizado.columns.values.tolist()] + df_atualizado.values.tolist())
-        st.cache_data.clear()  # Invalida o cache local para refletir a edição na hora
+        st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"Erro ao salvar na planilha: {e}")
@@ -166,7 +163,7 @@ else:
     dados_usuario = USUARIOS[st.session_state["usuario_logado"]]
     setores_permitidos = dados_usuario["setores"]
     
-    c_setor, c_planilha, c_botao, c_user = st.columns([1.2, 1.5, 1.2, 1])
+    c_setor, c_planilha, c_modo, c_user = st.columns([1, 1.3, 1.4, 0.8])
     
     with c_setor:
         setor_selecionado = st.selectbox("🏢 Setor:", setores_permitidos)
@@ -175,6 +172,8 @@ else:
     if setor_selecionado == "Visão Geral":
         with c_planilha:
             st.selectbox("📁 Planilha:", ["Painel Consolidado"], disabled=True)
+        with c_modo:
+            st.empty()
         with c_user:
             st.write(f"👤 **{dados_usuario['nome']}**")
             if st.button("🚪 Sair", key="btn_logout_dash"):
@@ -193,6 +192,8 @@ else:
     elif setor_selecionado == "Painel Admin":
         with c_planilha:
             st.selectbox("📁 Planilha:", ["Gestão do Sistema"], disabled=True)
+        with c_modo:
+            st.empty()
         with c_user:
             st.write(f"👤 **{dados_usuario['nome']}**")
             if st.button("🚪 Sair", key="btn_logout_admin"):
@@ -264,7 +265,7 @@ else:
                         salvar_dados(dados_sistema)
                         st.rerun()
 
-    # --- OPERAÇÃO DE PLANILHAS (VISUALIZAÇÃO E EDIÇÃO RÁPIDA) ---
+    # --- OPERAÇÃO DE PLANILHAS (VISUALIZAÇÃO COMPLETA E EDIÇÃO NATIVA) ---
     else:
         planilhas_do_setor = PLANILHAS_POR_SETOR.get(setor_selecionado, {})
         
@@ -272,42 +273,50 @@ else:
             if planilhas_do_setor:
                 planilha_selecionada = st.selectbox("📁 Planilha:", list(planilhas_do_setor.keys()))
                 id_planilha = planilhas_do_setor[planilha_selecionada]
-                url_google_sheets = f"https://docs.google.com/spreadsheets/d/{id_planilha}/edit"
             else:
                 st.selectbox("📁 Planilha:", ["Nenhuma planilha cadastrada"], disabled=True)
                 id_planilha = None
-                url_google_sheets = "#"
             
-        with c_botao:
-            if url_google_sheets != "#":
-                st.markdown(
-                    f'<a href="{url_google_sheets}" target="_blank">'
-                    f'<button style="width:100%; height:38px; margin-top:24px; background-color:#2e7d32; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">'
-                    f'🔗 Abrir no Google Sheets</button></a>',
-                    unsafe_allow_html=True
-                )
-            
+        with c_modo:
+            modo_visualizacao = st.radio(
+                "🖥️ Modo de Exibição:", 
+                ["Google Sheets Oficial (Completo)", "Tabela Nativa (API Rápida)"],
+                horizontal=True
+            )
+
         with c_user:
             st.write(f"👤 **{dados_usuario['nome']}**")
             if st.button("🚪 Sair", key="btn_logout"):
                 st.session_state["usuario_logado"] = None
                 st.rerun()
 
+        st.markdown("---")
+
         if id_planilha:
-            df_dados = ler_planilha_api(id_planilha)
-            if df_dados is not None:
-                st.caption("⚡ **Modo Nativo via API**: Você pode editar os valores na tabela abaixo e salvar direto no Google Sheets.")
+            # MODO 1: GOOGLE SHEETS OFICIAL (MANTÉM CORES, ÍCONES, FÓRMULAS E PERMITE EDIÇÃO)
+            if modo_visualizacao == "Google Sheets Oficial (Completo)":
+                embed_url = f"https://docs.google.com/spreadsheets/d/{id_planilha}/edit"
                 
-                # Editor de dados nativo do Streamlit
-                df_editado = st.data_editor(df_dados, use_container_width=True, height=550, num_rows="dynamic")
-                
-                col_salvar, col_vazio = st.columns([1, 3])
-                with col_salvar:
-                    if st.button("💾 Salvar Alterações na Nuvem"):
-                        if salvar_alteracoes_api(id_planilha, df_editado):
-                            st.success("Planilha sincronizada com sucesso!")
-                            st.rerun()
+                st.components.v1.html(
+                    f'<iframe src="{embed_url}" width="100%" height="750" frameborder="0" style="border:1px solid #444; border-radius:8px;"></iframe>',
+                    height=760
+                )
+            
+            # MODO 2: EDIÇÃO RÁPIDA VIA API (TABELA STREAMLIT)
             else:
-                st.warning("Não foi possível carregar a planilha. Verifique se compartilhou a planilha como Editor com o e-mail da Service Account.")
+                df_dados = ler_planilha_api(id_planilha)
+                if df_dados is not None:
+                    st.caption("⚡ **Modo Nativo via API**: Você pode editar os valores na tabela abaixo e salvar direto no Google Sheets.")
+                    
+                    df_editado = st.data_editor(df_dados, use_container_width=True, height=550, num_rows="dynamic")
+                    
+                    col_salvar, col_vazio = st.columns([1, 3])
+                    with col_salvar:
+                        if st.button("💾 Salvar Alterações na Nuvem"):
+                            if salvar_alteracoes_api(id_planilha, df_editado):
+                                st.success("Planilha sincronizada com sucesso!")
+                                st.rerun()
+                else:
+                    st.warning("Não foi possível carregar via API. Verifique as credenciais da Service Account.")
         else:
             st.info("Nenhuma planilha vinculada a este setor.")
