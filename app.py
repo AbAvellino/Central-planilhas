@@ -192,12 +192,26 @@ if st.session_state["usuario_logado"] is None:
             btn_entrar = st.form_submit_button("🚀 Entrar no Sistema")
             
             if btn_entrar:
-                if usuario in USUARIOS and verificar_senha(senha, USUARIOS[usuario]["senha"]):
-                    st.session_state["usuario_logado"] = usuario
-                    registrar_log(usuario, "Login", "Usuário autenticado com sucesso")
-                    st.rerun()
+                if usuario in USUARIOS:
+                    senha_armazenada = USUARIOS[usuario]["senha"]
+                    
+                    # Compatibilidade: verifica se a senha é o hash ou se ainda está em texto puro no JSON antigo
+                    senha_valida = verificar_senha(senha, senha_armazenada) or (senha == senha_armazenada)
+                    
+                    if senha_valida:
+                        # Se ainda estava em texto puro, atualiza automaticamente para o hash seguro
+                        if senha == senha_armazenada:
+                            USUARIOS[usuario]["senha"] = hash_senha(senha)
+                            dados_sistema["usuarios"] = USUARIOS
+                            salvar_dados(dados_sistema)
+
+                        st.session_state["usuario_logado"] = usuario
+                        registrar_log(usuario, "Login", "Usuário autenticado com sucesso")
+                        st.rerun()
+                    else:
+                        st.error("Senha incorreta.")
                 else:
-                    st.error("Usuário ou senha incorretos.")
+                    st.error("Usuário não encontrado.")
 
 else:
     dados_usuario = USUARIOS[st.session_state["usuario_logado"]]
@@ -252,7 +266,6 @@ else:
                     for nome_plan, sheet_id in planilhas.items():
                         df = ler_planilha_api(sheet_id)
                         if df is not None and not df.empty:
-                            # Converte tudo para texto e realiza busca
                             mascara = df.astype(str).apply(lambda row: row.str.contains(termo_busca, case=False, na=False)).any(axis=1)
                             resultados = df[mascara]
                             if not resultados.empty:
