@@ -186,7 +186,7 @@ def conectar_google_api():
 
 client_gspread = conectar_google_api()
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=300)
 def obter_abas_planilha(spreadsheet_id):
     if not client_gspread:
         return []
@@ -196,7 +196,7 @@ def obter_abas_planilha(spreadsheet_id):
     except Exception:
         return []
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=300)
 def ler_planilha_api(spreadsheet_id, nome_aba=None):
     if not client_gspread:
         return None
@@ -508,12 +508,16 @@ else:
                 if df_dados is not None:
                     pode_editar = (dados_usuario.get("permissao", "Escrita") == "Escrita")
                     
+                    # Identificador único de chave para manter o estado do componente fixo na memória
+                    editor_key = f"editor_{id_planilha}_{aba_selecionada}"
+                    
                     df_editado = st.data_editor(
                         df_dados, 
                         use_container_width=True, 
                         height=550, 
                         num_rows="dynamic" if pode_editar else "fixed",
-                        disabled=not pode_editar
+                        disabled=not pode_editar,
+                        key=editor_key
                     )
                     
                     col_salvar, col_csv, col_excel = st.columns([1.5, 1, 1])
