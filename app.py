@@ -251,7 +251,6 @@ if st.session_state["usuario_logado"] is None:
                 with st.spinner("Autenticando..."):
                     if usuario in USUARIOS:
                         senha_armazenada = USUARIOS[usuario]["senha"]
-                        # Correção de segurança: verificação estrita via Hash
                         if verificar_senha(senha, senha_armazenada):
                             st.session_state["usuario_logado"] = usuario
                             registrar_log(usuario, "Login", "Usuário autenticado")
@@ -272,7 +271,6 @@ else:
 
     # --- PAINEL ADMIN E LOGS ---
     if setor_selecionado == "Painel Admin":
-        # Correção de Segurança: Checagem estrita de privilégio Admin
         if not dados_usuario.get("e_admin", False):
             st.error("🚫 Acesso não autorizado. Apenas administradores possuem acesso a este painel.")
             st.stop()
@@ -301,7 +299,12 @@ else:
             st.markdown("### Cadastrar Nova Planilha")
             setores_existentes = list(PLANILHAS_POR_SETOR.keys())
             novo_setor_check = st.checkbox("Criar um novo setor")
-            setor_dest = st.text_input("Nome do Novo Setor").strip() if novo_setor_check else st.selectbox("Selecionar Setor Existente", setores_existentes)
+            
+            if novo_setor_check:
+                setor_dest = st.text_input("Nome do Novo Setor").strip()
+            else:
+                setor_dest = st.selectbox("Selecionar Setor Existente", setores_existentes) if setores_existentes else st.text_input("Nome do Setor").strip()
+                
             nome_planilha = st.text_input("Nome da Planilha").strip()
             id_planilha_input = st.text_input("ID do Google Sheets").strip()
 
@@ -317,6 +320,8 @@ else:
                     st.cache_data.clear()
                     st.success("Planilha gravada com sucesso!")
                     st.rerun()
+                else:
+                    st.warning("Preencha todos os campos para salvar.")
 
         with tab_cadastrar_usr:
             st.markdown("### Cadastrar Novo Usuário")
@@ -324,7 +329,7 @@ else:
             nova_senha = st.text_input("Senha Inicial", type="password").strip()
             nome_completo = st.text_input("Nome Exibido").strip()
             
-            todos_setores = ["Visão Geral", "Busca Global"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
+            todos_setores = list(set(["Visão Geral", "Busca Global", "Painel Admin"] + list(PLANILHAS_POR_SETOR.keys())))
             setores_usuario = st.multiselect("Setores Permitidos:", todos_setores, default=["Visão Geral", "Busca Global"])
             permissao_tipo = st.radio("Nível de Acesso às Planilhas:", ["Escrita", "Leitura"], horizontal=True)
             e_admin_check = st.checkbox("Tornar Administrador do Sistema")
@@ -349,10 +354,12 @@ else:
                         st.cache_data.clear()
                         st.success(f"Usuário '{novo_login}' criado!")
                         st.rerun()
+                else:
+                    st.warning("Preencha todos os campos obrigatórios.")
 
         with tab_gerenciar_usr:
             st.markdown("### Gerenciar Usuários no Banco")
-            todos_setores = ["Visão Geral", "Busca Global"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
+            todos_setores = list(set(["Visão Geral", "Busca Global", "Painel Admin"] + list(PLANILHAS_POR_SETOR.keys())))
             lista_logins = list(USUARIOS.keys())
 
             if lista_logins:
@@ -367,7 +374,7 @@ else:
 
                 c_perm1, c_perm2, c_admin = st.columns([2, 1, 1])
                 with c_perm1:
-                    novos_setores = st.multiselect("Setores liberados:", options=todos_setores, default=info["setores"], key=f"ms_{usr_sel}")
+                    novos_setores = st.multiselect("Setores liberados:", options=todos_setores, default=info.get("setores", []), key=f"ms_{usr_sel}")
                 with c_perm2:
                     nova_perm = st.selectbox("Modo de Acesso:", ["Escrita", "Leitura"], index=0 if info.get("permissao","Escrita") == "Escrita" else 1, key=f"perm_{usr_sel}")
                 with c_admin:
@@ -445,16 +452,17 @@ else:
                 for nome_plan, sheet_id in planilhas.items():
                     tarefas.append((setor, nome_plan, sheet_id))
 
-            with st.spinner("Pesquisando em paralelo..."):
-                with ThreadPoolExecutor(max_workers=5) as executor:
-                    resultados_pesquisa = list(executor.map(buscar_na_planilha, tarefas))
+            if tarefas:
+                with st.spinner("Pesquisando em paralelo..."):
+                    with ThreadPoolExecutor(max_workers=5) as executor:
+                        resultados_pesquisa = list(executor.map(buscar_na_planilha, tarefas))
 
-            for item in resultados_pesquisa:
-                if item:
-                    setor, nome_plan, df_res = item
-                    encontrados += len(df_res)
-                    st.write(f"📍 **Setor:** `{setor}` | **Planilha:** `{nome_plan}` ({len(df_res)} registro(s))")
-                    st.dataframe(df_res, use_container_width=True)
+                for item in resultados_pesquisa:
+                    if item:
+                        setor, nome_plan, df_res = item
+                        encontrados += len(df_res)
+                        st.write(f"📍 **Setor:** `{setor}` | **Planilha:** `{nome_plan}` ({len(df_res)} registro(s))")
+                        st.dataframe(df_res, use_container_width=True)
 
             if encontrados == 0:
                 st.warning("Nenhum resultado encontrado para o termo pesquisado.")
