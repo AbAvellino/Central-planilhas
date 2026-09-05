@@ -3,3 +3,5 @@ pandas
 gspread
 google-auth
 openpyxl
+psycopg2-binary
+sqlalchemy
