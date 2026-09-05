@@ -34,7 +34,6 @@ st.markdown("""
 # ==============================================================================
 # CONFIGURAÇÃO DA PLANILHA DE BANCO DE DADOS CENTRAL
 # ==============================================================================
-# ⚠️ COLE AQUI O ID DA PLANILHA 'Central_Configuracoes_Sistema' QUE VOCÊ CRIOU
 ID_PLANILHA_SISTEMA = "1s9t8pwhlc2Kg2hNJNPTHi7bTjMm9ZyRQhwSPacJYN2k"
 
 # ==============================================================================
@@ -218,7 +217,7 @@ def registrar_log(usuario, acao, detalhe):
             usuario,
             acao,
             detalhe
-        ], index=2) # Insere logo abaixo do cabeçalho
+        ], index=2)
     except Exception as e:
         print(f"Erro ao salvar log: {e}")
 
@@ -256,7 +255,10 @@ def salvar_alteracoes_api(spreadsheet_id, df_atualizado, nome_aba=None):
         sh = client_gspread.open_by_key(spreadsheet_id)
         sheet = sh.worksheet(nome_aba) if nome_aba else sh.sheet1
         sheet.clear()
-        sheet.update([df_atualizado.columns.values.tolist()] + df_atualizado.values.tolist())
+        
+        # Converte valores do DataFrame para string limpa antes de enviar para o Sheets
+        df_limpo = df_atualizado.fillna("").astype(str)
+        sheet.update([df_limpo.columns.values.tolist()] + df_limpo.values.tolist())
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -301,14 +303,18 @@ if st.session_state["usuario_logado"] is None:
                     st.error("Usuário não encontrado.")
 
 else:
-    dados_usuario = USUARIOS[st.session_state["usuario_logado"]]
-    setores_permitidos = dados_usuario["setores"]
+    dados_usuario = USUARIOS.get(st.session_state["usuario_logado"], {})
+    if not dados_usuario:
+        st.session_state["usuario_logado"] = None
+        st.rerun()
+
+    setores_permitidos = dados_usuario.get("setores", [])
     
     # BARRA FIXA SUPERIOR DE SELEÇÃO
     c_setor, c_planilha, c_modo, c_user = st.columns([1.2, 1.3, 1.5, 0.8])
     
     with c_setor:
-        setor_selecionado = st.selectbox("🏢 Setor / Área", setores_permitidos)
+        setor_selecionado = st.selectbox("🏢 Setor / Área", setores_permitidos) if setores_permitidos else None
         
     # --- VISÃO GERAL ---
     if setor_selecionado == "Visão Geral":
@@ -317,7 +323,7 @@ else:
         with c_modo:
             st.empty()
         with c_user:
-            st.write(f"👤 **{dados_usuario['nome']}**")
+            st.write(f"👤 **{dados_usuario.get('nome', '')}**")
             if st.button("🚪 Sair", key="btn_logout_dash"):
                 st.session_state["usuario_logado"] = None
                 st.rerun()
@@ -337,7 +343,7 @@ else:
         with c_modo:
             st.empty()
         with c_user:
-            st.write(f"👤 **{dados_usuario['nome']}**")
+            st.write(f"👤 **{dados_usuario.get('nome', '')}**")
             if st.button("🚪 Sair", key="btn_logout_search"):
                 st.session_state["usuario_logado"] = None
                 st.rerun()
@@ -369,7 +375,7 @@ else:
         with c_modo:
             st.empty()
         with c_user:
-            st.write(f"👤 **{dados_usuario['nome']}**")
+            st.write(f"👤 **{dados_usuario.get('nome', '')}**")
             if st.button("🚪 Sair", key="btn_logout_admin"):
                 st.session_state["usuario_logado"] = None
                 st.rerun()
@@ -388,7 +394,7 @@ else:
             st.markdown("### Cadastrar Nova Planilha")
             setores_existentes = list(PLANILHAS_POR_SETOR.keys())
             novo_setor_check = st.checkbox("Criar um novo setor")
-            setor_dest = st.text_input("Nome do Novo Setor").strip() if novo_setor_check else st.selectbox("Selecionar Setor Existente", setores_existentes)
+            setor_dest = st.text_input("Nome do Novo Setor").strip() if novo_setor_check else st.selectbox("Selecionar Setor Existente", setores_existentes) if setores_existentes else st.text_input("Nome do Novo Setor").strip()
             nome_planilha = st.text_input("Nome da Planilha").strip()
             id_planilha_input = st.text_input("ID do Google Sheets").strip()
 
@@ -409,7 +415,7 @@ else:
             nova_senha = st.text_input("Senha Inicial", type="password").strip()
             nome_completo = st.text_input("Nome Exibido").strip()
             
-            todos_setores = ["Visão Geral", "Busca Global"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
+            todos_setores = list(set(["Visão Geral", "Busca Global"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]))
             setores_usuario = st.multiselect("Setores Permitidos:", todos_setores, default=["Visão Geral", "Busca Global"])
             permissao_tipo = st.radio("Nível de Acesso às Planilhas:", ["Escrita", "Leitura"], horizontal=True)
             e_admin_check = st.checkbox("Tornar Administrador do Sistema")
@@ -430,7 +436,7 @@ else:
 
         with tab_gerenciar_usr:
             st.markdown("### Gerenciar, Alterar e Excluir Usuários")
-            todos_setores = ["Visão Geral", "Busca Global"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
+            todos_setores = list(set(["Visão Geral", "Busca Global"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]))
 
             for login, info in list(USUARIOS.items()):
                 with st.expander(f"👤 **{info['nome']}** (`login: {login}`)", expanded=False):
@@ -442,6 +448,141 @@ else:
 
                     c_perm1, c_perm2, c_admin = st.columns([2, 1, 1])
                     with c_perm1:
-                        novos_setores = st.multiselect("Setores liberados:", options=todos_setores, default=info["setores"], key=f"ms_{login}")
+                        novos_setores = st.multiselect("Setores liberados:", options=todos_setores, default=[s for s in info["setores"] if s in todos_setores], key=f"ms_{login}")
                     with c_perm2:
-                        nova_perm = st.selectbox("Modo de Acess
+                        nova_perm = st.selectbox("Modo de Acesso:", ["Escrita", "Leitura"], index=0 if info.get("permissao","Escrita") == "Escrita" else 1, key=f"perm_{login}")
+                    with c_admin:
+                        e_admin_val = st.checkbox("É Admin", value=info.get("e_admin", False), key=f"chk_admin_{login}")
+
+                    st.markdown("---")
+                    c_btn_save, c_btn_del = st.columns([2, 1])
+                    
+                    with c_btn_save:
+                        if st.button("💾 Salvar Alterações do Usuário", key=f"btn_up_{login}"):
+                            USUARIOS[login]["nome"] = novo_nome_val
+                            if nova_senha_val.strip():
+                                USUARIOS[login]["senha"] = hash_senha(nova_senha_val.strip())
+                            
+                            USUARIOS[login]["setores"] = novos_setores
+                            USUARIOS[login]["permissao"] = nova_perm
+                            USUARIOS[login]["e_admin"] = e_admin_val
+                            
+                            salvar_usuarios_sheets(USUARIOS)
+                            registrar_log(st.session_state["usuario_logado"], "Alteração Usuário", f"Dados do usuário '{login}' atualizados.")
+                            st.success(f"Usuário '{login}' atualizado com sucesso!")
+                            st.rerun()
+                    
+                    with c_btn_del:
+                        if st.button("❌ Excluir Usuário", key=f"btn_del_{login}", type="secondary"):
+                            if login == st.session_state["usuario_logado"]:
+                                st.error("Você não pode excluir o seu próprio usuário logado!")
+                            else:
+                                del USUARIOS[login]
+                                salvar_usuarios_sheets(USUARIOS)
+                                registrar_log(st.session_state["usuario_logado"], "Exclusão Usuário", f"Usuário '{login}' foi excluído.")
+                                st.warning(f"Usuário '{login}' foi removido!")
+                                st.rerun()
+
+        with tab_logs:
+            st.markdown("### 📜 Histórico de Atividades / Auditoria")
+            if client_gspread and ID_PLANILHA_SISTEMA != "COLE_AQUI_O_ID_DA_SUA_PLANILHA_SISTEMA":
+                try:
+                    sh = client_gspread.open_by_key(ID_PLANILHA_SISTEMA)
+                    logs_data = sh.worksheet("Logs").get_all_records()
+                    df_logs = pd.DataFrame(logs_data)
+                    st.dataframe(df_logs, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Erro ao obter logs: {e}")
+            else:
+                st.info("Insira o ID_PLANILHA_SISTEMA para carregar os logs.")
+
+    # --- OPERAÇÃO DE PLANILHAS (VISUALIZAÇÃO E EDIÇÃO MULTIABAS) ---
+    else:
+        planilhas_do_setor = PLANILHAS_POR_SETOR.get(setor_selecionado, {})
+        
+        with c_planilha:
+            if planilhas_do_setor:
+                planilha_selecionada = st.selectbox("📁 Planilha", list(planilhas_do_setor.keys()))
+                id_planilha = planilhas_do_setor[planilha_selecionada]
+            else:
+                st.selectbox("📁 Planilha", ["Nenhuma planilha cadastrada neste setor"], disabled=True)
+                id_planilha = None
+            
+        with c_modo:
+            modo_visualizacao = st.radio(
+                "🖥️ Modo de Exibição", 
+                ["🌐 Google Sheets Oficial (Completo)", "⚡ Tabela Nativa (API Rápida)"],
+                horizontal=True
+            )
+
+        with c_user:
+            st.write(f"👤 **{dados_usuario.get('nome', '')}**")
+            if st.button("🚪 Sair", key="btn_logout"):
+                st.session_state["usuario_logado"] = None
+                st.rerun()
+
+        st.markdown("---")
+
+        if id_planilha:
+            # MODO 1: GOOGLE SHEETS OFICIAL
+            if modo_visualizacao == "🌐 Google Sheets Oficial (Completo)":
+                embed_url = f"https://docs.google.com/spreadsheets/d/{id_planilha}/edit"
+                st.components.v1.html(
+                    f'<iframe src="{embed_url}" width="100%" height="750" frameborder="0" style="border:1px solid #333; border-radius:8px;"></iframe>',
+                    height=755
+                )
+            
+            # MODO 2: EDIÇÃO RÁPIDA VIA API MULTIABAS
+            else:
+                abas = obter_abas_planilha(id_planilha)
+                aba_selecionada = None
+                
+                c_aba, c_exp = st.columns([2, 2])
+                with c_aba:
+                    if abas:
+                        aba_selecionada = st.selectbox("📑 Selecione a Aba da Planilha:", abas)
+                
+                df_dados = ler_planilha_api(id_planilha, aba_selecionada)
+                
+                if df_dados is not None:
+                    pode_editar = (dados_usuario.get("permissao", "Escrita") == "Escrita")
+                    
+                    if not pode_editar:
+                        st.info("ℹ️ Você possui acesso em **Modo de Somente Leitura** nesta planilha.")
+                    
+                    df_editado = st.data_editor(
+                        df_dados, 
+                        use_container_width=True, 
+                        height=550, 
+                        num_rows="dynamic" if pode_editar else "fixed",
+                        disabled=not pode_editar
+                    )
+                    
+                    col_salvar, col_csv, col_excel = st.columns([1.5, 1, 1])
+                    
+                    if pode_editar:
+                        with col_salvar:
+                            if st.button("💾 Salvar Alterações na Nuvem"):
+                                if salvar_alteracoes_api(id_planilha, df_editado, aba_selecionada):
+                                    registrar_log(
+                                        st.session_state["usuario_logado"], 
+                                        "Edição Planilha", 
+                                        f"Planilha '{planilha_selecionada}' (Aba: '{aba_selecionada}') atualizada"
+                                    )
+                                    st.success("Planilha sincronizada e alteração registrada nos Logs!")
+                                    st.rerun()
+                    
+                    # OPÇÕES DE EXPORTAÇÃO DE DADOS
+                    with col_csv:
+                        csv_data = df_editado.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Exportar CSV", data=csv_data, file_name=f"{planilha_selecionada}.csv", mime="text/csv")
+                    
+                    with col_excel:
+                        buffer = io.BytesIO()
+                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                            df_editado.to_excel(writer, index=False, sheet_name=str(aba_selecionada or "Dados"))
+                        st.download_button("📊 Exportar Excel", data=buffer.getvalue(), file_name=f"{planilha_selecionada}.xlsx", mime="application/vnd.ms-excel")
+                else:
+                    st.warning("Não foi possível carregar via API. Verifique as credenciais da Service Account.")
+        else:
+            st.info("Nenhuma planilha vinculada a este setor.")
