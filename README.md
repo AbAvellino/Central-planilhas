@@ -1,59 +1,56 @@
-# 📊 Central Unificada de Planilhas (Streamlit + Google Sheets API)
+# 🏢 Central Unificada de Planilhas (Streamlit + PostgreSQL + Google Sheets)
 
-Uma plataforma web de gestão centralizada desenvolvida em **Python** e **Streamlit**, integrada via **Google Sheets API**. O sistema permite visualizar, editar, filtrar e gerenciar múltiplas planilhas do Google Sheets divididas por setores, com controle de acesso baseado em funções (RBAC), criptografia de senhas e auditoria completa de ações via logs.
+Uma aplicação web desenvolvida em **Python** e **Streamlit** para gerenciamento centralizado de planilhas operacionais, controle de acessos por setor, busca global unificada e logs de auditoria.
 
 ---
 
-## 🚀 Funcionalidades Principais
+## 🚀 O que há de novo (Últimas Atualizações)
 
-* **🔒 Autenticação e Segurança:**
-  * Login individual com criptografia **SHA-256** para armazenamento seguro de senhas.
-  * Controle de acesso por **Setores/Áreas**.
-  * Permissões granulares de acesso: **Escrita** (edição completa) ou **Leitura** (somente visualização/download).
-* **🏢 Gestão Multisetor:**
-  * Suporte a múltiplos setores (ex: Almoxarifado, Containers, Gerência, etc.).
-  * Alternância dinâmica de abas (*worksheets*) dentro de cada planilha Google.
-* **🖥️ Modos de Exibição:**
-  * **Google Sheets Oficial:** Visualização incorporada (*iframe*) do painel nativo do Google.
-  * **Tabela Nativa (API Rápida):** Interface reativa via `st.data_editor` para edições rápidas sem abrir a nuvem.
-* **🔎 Busca Global Multisetor:**
-  * Ferramenta de varredura que pesquisa palavras-chave, códigos de itens ou IDs simultaneamente em todas as planilhas cadastradas no sistema.
-* **⚙️ Painel do Administrador:**
-  * **Cadastro de Planilhas:** Adição simples de novas planilhas e novos setores via ID do Google Sheets.
-  * **Cadastro de Usuários:** Criação de novos perfis com regras de acesso e privilégios específicos.
-  * **Gerenciamento Completo de Usuários:** Edição de nomes, alteração de senhas, alteração de privilégios/setores e **exclusão com trava de segurança** (impede o admin de deletar o próprio perfil).
-* **📜 Logs de Auditoria:**
-  * Rastreamento automático de login, edições de dados, novos cadastros e exclusões de usuários com data e hora.
-* **📥 Exportação de Dados:**
-  * Download imediato das tabelas filtradas/editadas nos formatos **CSV** e **Excel (.xlsx)**.
+- ⚡ **Busca Global Otimizada:** Varredura multisetor executada em paralelo (`ThreadPoolExecutor`), permitindo consultar múltiplos setores e planilhas em fração de segundos.
+- 🎯 **Estabilidade Visual na Edição:** Resolução do comportamento de repaginação/pulo de tela (`scroll`) ao selecionar e editar células no `st.data_editor`, utilizando gerenciamento de chaves de estado do Streamlit.
+- 🗄️ **Pool de Conexões de Banco de Dados:** Implementação do `ThreadedConnectionPool` no PostgreSQL (`psycopg2`) para alta eficiência e escalabilidade na autenticação e logs.
+- 🧹 **Tratamento de Dados no Salvamento:** Sanitização de valores `NaN`/nulos e limpeza de caracteres invisíveis ao sincronizar com o Google Sheets API.
 
 ---
 
 ## 🛠️ Tecnologias Utilizadas
 
-* **Linguagem:** Python 3.9+
-* **Interface:** [Streamlit](https://streamlit.io/)
-* **Manipulação de Dados:** Pandas
-* **Integração Cloud:** `gspread`, `google-oauth2`
-* **Exportação:** OpenPyXL
+- **Interface:** Streamlit
+- **Processamento de Dados:** Pandas / OpenPyXL
+- **Banco de Dados:** PostgreSQL (Serviço de Logins, Permissões e Auditoria)
+- **Integração de Planilhas:** Google Sheets API (`gspread` / `google-auth`)
+- **Paralelismo:** Python `concurrent.futures`
 
 ---
 
-## 📋 Pré-requisitos
+## 🔒 Segurança e Permissões
 
-1. **Python 3.9+** instalado.
-2. Conta no **Google Cloud Platform (GCP)** com as APIs ativadas:
-   * **Google Sheets API**
-   * **Google Drive API**
-3. Uma **Conta de Serviço (Service Account)** criada no GCP com chave baixada no formato JSON (`chave.json`) ou configurada via `st.secrets`.
-
-> ⚠️ **Importante:** Lembre-se de compartilhar cada planilha do Google Sheets com o e-mail da sua **Service Account** (concedendo permissão de *Editor*).
+- **Criptografia de Senhas:** Hashing via `SHA-256`.
+- **Controle de Acesso em 2 Níveis:**
+  - **Por Setor:** O usuário visualiza e edita apenas os setores atribuídos ao seu perfil.
+  - **Por Nível de Acesso:** Definição entre privilégios de **Escrita** (edição direta e salvamento na nuvem) e **Leitura** (apenas visualização e exportação).
+- **Painel Administrativo Restrito:** Exclusivo para usuários administradores realizarem novos cadastros, alterações de permissões e leitura dos **Logs de Auditoria**.
 
 ---
 
-## 🔧 Instalação e Execução Local
+## 📑 Funcionalidades Principais
 
-### 1. Clonar o Repositório
-```bash
-git clone [https://github.com/seu-usuario/central-unificada-planilhas.git](https://github.com/seu-usuario/central-unificada-planilhas.git)
-cd central-unificada-planilhas
+1. **🌐 Visualização Híbrida de Planilhas:**
+   - **Modo Google Sheets Oficial:** Incorpora a interface original do Google Sheets via iframe.
+   - **Modo Tabela Nativa (API Rápida):** Tabela nativa editável em alta velocidade com navegação por abas, salvamento na nuvem e exportação rápida em formato `.CSV` ou `.XLSX`.
+
+2. **🔍 Busca Global Multisetor:**
+   - Pesquisa avançada por códigos, descrições de produtos ou IDs de contêineres em todas as planilhas cadastradas no sistema simultaneamente.
+
+3. **📜 Logs de Auditoria:**
+   - Registro de todas as ações de usuários (Logins, Edições em Planilhas, Criação e Alteração de Usuários/Planilhas).
+
+---
+
+### 🔒 Gestão de Segredos e Segurança (`secrets.toml`)
+
+A aplicação utiliza o recurso nativo `st.secrets` do Streamlit para o gerenciamento seguro de credenciais, garantindo que senhas e chaves de API nunca fiquem expostas no código fonte.
+
+* **Conexão com PostgreSQL:** A string de conexão do banco de dados é injetada via variáveis de ambiente seguras.
+* **Autenticação Google API:** É utilizada uma **Conta de Serviço (Service Account)** com escopo limitado (`https://www.googleapis.com/auth/spreadsheets`), garantindo acesso apenas às planilhas previamente autorizadas.
+* **Boas Práticas de Repositório:** O arquivo `.streamlit/secrets.toml` está incluído no `.gitignore` para evitar o envio acidental de chaves privadas para repositórios de código.
