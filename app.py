@@ -43,7 +43,7 @@ def verificar_senha(senha_input: str, senha_hash: str) -> bool:
     return hash_senha(senha_input) == senha_hash
 
 # ==============================================================================
-# CONEXÃO E OPERAÇÕES BANCO DE DADOS POSTGRESQL (COM CACHE)
+# CONEXÃO E OPERAÇÕES BANCO DE DADOS POSTGRESQL (COM CACHE OTIMIZADO)
 # ==============================================================================
 @st.cache_resource
 def criar_conexao_db_cache():
@@ -61,6 +61,7 @@ def obter_conexao_db():
         conn = criar_conexao_db_cache()
     return conn
 
+@st.cache_resource
 def inicializar_banco():
     conn = obter_conexao_db()
     if not conn:
@@ -69,7 +70,6 @@ def inicializar_banco():
     try:
         cursor = conn.cursor()
         
-        # Tabela de Usuários
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
                 login VARCHAR(50) PRIMARY KEY,
@@ -81,7 +81,6 @@ def inicializar_banco():
             );
         """)
         
-        # Tabela de Planilhas
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS planilhas (
                 id SERIAL PRIMARY KEY,
@@ -92,7 +91,6 @@ def inicializar_banco():
             );
         """)
 
-        # Tabela de Logs
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS logs (
                 id SERIAL PRIMARY KEY,
@@ -105,7 +103,6 @@ def inicializar_banco():
 
         conn.commit()
 
-        # Criar Usuário Admin Padrão se não existir nenhum (com ON CONFLICT para evitar erro)
         cursor.execute("""
             INSERT INTO usuarios (login, senha, nome, setores, permissao, e_admin)
             VALUES (%s, %s, %s, %s, %s, %s)
@@ -119,7 +116,6 @@ def inicializar_banco():
             True
         ))
         
-        # Inserir planilhas iniciais padrão
         cursor.execute("""
             INSERT INTO planilhas (setor, nome, spreadsheet_id) VALUES
             ('Almoxarifado', 'Controle', '1nb-gVt6e98Kh4BAYl9l-dgspleRHZDfe8DAT2B1OB_I'),
@@ -133,9 +129,9 @@ def inicializar_banco():
         conn.rollback()
         st.error(f"Erro ao inicializar banco: {e}")
 
-# Executa a inicialização do banco
 inicializar_banco()
 
+@st.cache_data(ttl=300)
 def carregar_usuarios():
     conn = obter_conexao_db()
     if not conn:
@@ -156,10 +152,11 @@ def carregar_usuarios():
                 "e_admin": r["e_admin"]
             }
         return usuarios
-    except Exception as e:
+    except Exception:
         conn.rollback()
         return {}
 
+@st.cache_data(ttl=300)
 def carregar_planilhas_por_setor():
     conn = obter_conexao_db()
     if not conn:
@@ -177,7 +174,7 @@ def carregar_planilhas_por_setor():
                 planilhas_dict[setor] = {}
             planilhas_dict[setor][r["nome"]] = r["spreadsheet_id"]
         return planilhas_dict
-    except Exception as e:
+    except Exception:
         conn.rollback()
         return {}
 
@@ -207,7 +204,7 @@ def obter_logs():
         conn.rollback()
         return pd.DataFrame()
 
-# Carrega dados do banco
+# Carrega dados do banco via Cache
 USUARIOS = carregar_usuarios()
 PLANILHAS_POR_SETOR = carregar_planilhas_por_setor()
 
@@ -309,8 +306,8 @@ if st.session_state["usuario_logado"] is None:
                         st.error("Usuário não encontrado.")
 
 else:
-    dados_usuario = USUARIOS[st.session_state["usuario_logado"]]
-    setores_permitidos = dados_usuario["setores"]
+    dados_usuario = USUARIOS.get(st.session_state["usuario_logado"], {})
+    setores_permitidos = dados_usuario.get("setores", [])
     
     c_setor, c_planilha, c_modo, c_user = st.columns([1.2, 1.3, 1.5, 0.8])
     
@@ -324,7 +321,7 @@ else:
         with c_modo:
             st.empty()
         with c_user:
-            st.write(f"👤 **{dados_usuario['nome']}**")
+            st.write(f"👤 **{dados_usuario.get('nome','')}**")
             if st.button("🚪 Sair", key="btn_logout_dash"):
                 st.session_state["usuario_logado"] = None
                 st.rerun()
@@ -344,7 +341,7 @@ else:
         with c_modo:
             st.empty()
         with c_user:
-            st.write(f"👤 **{dados_usuario['nome']}**")
+            st.write(f"👤 **{dados_usuario.get('nome','')}**")
             if st.button("🚪 Sair", key="btn_logout_search"):
                 st.session_state["usuario_logado"] = None
                 st.rerun()
@@ -376,7 +373,7 @@ else:
         with c_modo:
             st.empty()
         with c_user:
-            st.write(f"👤 **{dados_usuario['nome']}**")
+            st.write(f"👤 **{dados_usuario.get('nome','')}**")
             if st.button("🚪 Sair", key="btn_logout_admin"):
                 st.session_state["usuario_logado"] = None
                 st.rerun()
@@ -415,6 +412,7 @@ else:
                                 cursor.close()
 
                                 registrar_log(st.session_state["usuario_logado"], "Cadastro Planilha", f"Planilha '{nome_planilha}' no setor '{setor_dest}'")
+                                st.cache_data.clear()
                                 st.success("Planilha gravada no PostgreSQL com sucesso!")
                                 st.rerun()
                             except Exception as e:
@@ -456,6 +454,7 @@ else:
                                     cursor.close()
 
                                     registrar_log(st.session_state["usuario_logado"], "Cadastro Usuário", f"Usuário '{novo_login}' criado/atualizado.")
+                                    st.cache_data.clear()
                                     st.success(f"Usuário '{novo_login}' gravado no banco com sucesso!")
                                     st.rerun()
                                 except Exception as e:
@@ -466,70 +465,76 @@ else:
             st.markdown("### Gerenciar Usuários no Banco")
             todos_setores = ["Visão Geral", "Busca Global"] + list(PLANILHAS_POR_SETOR.keys()) + ["Painel Admin"]
 
-            for login, info in list(USUARIOS.items()):
-                with st.expander(f"👤 **{info['nome']}** (`login: {login}`)", expanded=False):
-                    c_n, c_s = st.columns(2)
-                    with c_n:
-                        novo_nome_val = st.text_input("Nome do Usuário", value=info["nome"], key=f"nome_{login}")
-                    with c_s:
-                        nova_senha_val = st.text_input("Nova Senha (deixe em branco para manter)", type="password", key=f"pwd_{login}")
+            # OTIMIZAÇÃO: Seleção individual em vez de carregar dezenas de formulários ao mesmo tempo
+            lista_logins = list(USUARIOS.keys())
+            if lista_logins:
+                usr_sel = st.selectbox("Selecione o Usuário para Alterar/Excluir:", lista_logins)
+                info = USUARIOS[usr_sel]
 
-                    c_perm1, c_perm2, c_admin = st.columns([2, 1, 1])
-                    with c_perm1:
-                        novos_setores = st.multiselect("Setores liberados:", options=todos_setores, default=info["setores"], key=f"ms_{login}")
-                    with c_perm2:
-                        nova_perm = st.selectbox("Modo de Acesso:", ["Escrita", "Leitura"], index=0 if info.get("permissao","Escrita") == "Escrita" else 1, key=f"perm_{login}")
-                    with c_admin:
-                        e_admin_val = st.checkbox("É Admin", value=info.get("e_admin", False), key=f"chk_admin_{login}")
+                c_n, c_s = st.columns(2)
+                with c_n:
+                    novo_nome_val = st.text_input("Nome do Usuário", value=info["nome"], key=f"nome_{usr_sel}")
+                with c_s:
+                    nova_senha_val = st.text_input("Nova Senha (deixe em branco para manter)", type="password", key=f"pwd_{usr_sel}")
 
-                    st.markdown("---")
-                    c_btn_save, c_btn_del = st.columns([2, 1])
-                    
-                    with c_btn_save:
-                        if st.button("💾 Salvar no Banco", key=f"btn_up_{login}"):
-                            with st.spinner("Atualizando usuário..."):
+                c_perm1, c_perm2, c_admin = st.columns([2, 1, 1])
+                with c_perm1:
+                    novos_setores = st.multiselect("Setores liberados:", options=todos_setores, default=info["setores"], key=f"ms_{usr_sel}")
+                with c_perm2:
+                    nova_perm = st.selectbox("Modo de Acesso:", ["Escrita", "Leitura"], index=0 if info.get("permissao","Escrita") == "Escrita" else 1, key=f"perm_{usr_sel}")
+                with c_admin:
+                    e_admin_val = st.checkbox("É Admin", value=info.get("e_admin", False), key=f"chk_admin_{usr_sel}")
+
+                st.markdown("---")
+                c_btn_save, c_btn_del = st.columns([2, 1])
+                
+                with c_btn_save:
+                    if st.button("💾 Salvar Alterações", key=f"btn_up_{usr_sel}"):
+                        with st.spinner("Atualizando usuário..."):
+                            conn = obter_conexao_db()
+                            if conn:
+                                try:
+                                    cursor = conn.cursor()
+                                    if nova_senha_val.strip():
+                                        cursor.execute("""
+                                            UPDATE usuarios SET nome=%s, senha=%s, setores=%s, permissao=%s, e_admin=%s WHERE login=%s;
+                                        """, (novo_nome_val, hash_senha(nova_senha_val.strip()), novos_setores, nova_perm, e_admin_val, usr_sel))
+                                    else:
+                                        cursor.execute("""
+                                            UPDATE usuarios SET nome=%s, setores=%s, permissao=%s, e_admin=%s WHERE login=%s;
+                                        """, (novo_nome_val, novos_setores, nova_perm, e_admin_val, usr_sel))
+                                    conn.commit()
+                                    cursor.close()
+
+                                    registrar_log(st.session_state["usuario_logado"], "Alteração Usuário", f"Usuário '{usr_sel}' atualizado no PostgreSQL")
+                                    st.cache_data.clear()
+                                    st.success(f"Usuário '{usr_sel}' atualizado!")
+                                    st.rerun()
+                                except Exception as e:
+                                    conn.rollback()
+                                    st.error(f"Erro ao atualizar: {e}")
+                
+                with c_btn_del:
+                    if st.button("❌ Excluir Usuário", key=f"btn_del_{usr_sel}", type="secondary"):
+                        if usr_sel == st.session_state["usuario_logado"]:
+                            st.error("Você não pode excluir o seu próprio usuário logado!")
+                        else:
+                            with st.spinner("Removendo usuário..."):
                                 conn = obter_conexao_db()
                                 if conn:
                                     try:
                                         cursor = conn.cursor()
-                                        if nova_senha_val.strip():
-                                            cursor.execute("""
-                                                UPDATE usuarios SET nome=%s, senha=%s, setores=%s, permissao=%s, e_admin=%s WHERE login=%s;
-                                            """, (novo_nome_val, hash_senha(nova_senha_val.strip()), novos_setores, nova_perm, e_admin_val, login))
-                                        else:
-                                            cursor.execute("""
-                                                UPDATE usuarios SET nome=%s, setores=%s, permissao=%s, e_admin=%s WHERE login=%s;
-                                            """, (novo_nome_val, novos_setores, nova_perm, e_admin_val, login))
+                                        cursor.execute("DELETE FROM usuarios WHERE login=%s;", (usr_sel,))
                                         conn.commit()
                                         cursor.close()
 
-                                        registrar_log(st.session_state["usuario_logado"], "Alteração Usuário", f"Usuário '{login}' atualizado no PostgreSQL")
-                                        st.success(f"Usuário '{login}' atualizado!")
+                                        registrar_log(st.session_state["usuario_logado"], "Exclusão Usuário", f"Usuário '{usr_sel}' removido do banco")
+                                        st.cache_data.clear()
+                                        st.warning(f"Usuário '{usr_sel}' removido!")
                                         st.rerun()
                                     except Exception as e:
                                         conn.rollback()
-                                        st.error(f"Erro ao atualizar: {e}")
-                    
-                    with c_btn_del:
-                        if st.button("❌ Excluir", key=f"btn_del_{login}", type="secondary"):
-                            if login == st.session_state["usuario_logado"]:
-                                st.error("Você não pode excluir o seu próprio usuário logado!")
-                            else:
-                                with st.spinner("Removendo usuário..."):
-                                    conn = obter_conexao_db()
-                                    if conn:
-                                        try:
-                                            cursor = conn.cursor()
-                                            cursor.execute("DELETE FROM usuarios WHERE login=%s;", (login,))
-                                            conn.commit()
-                                            cursor.close()
-
-                                            registrar_log(st.session_state["usuario_logado"], "Exclusão Usuário", f"Usuário '{login}' removido do banco")
-                                            st.warning(f"Usuário '{login}' removido!")
-                                            st.rerun()
-                                        except Exception as e:
-                                            conn.rollback()
-                                            st.error(f"Erro ao excluir: {e}")
+                                        st.error(f"Erro ao excluir: {e}")
 
         with tab_logs:
             st.markdown("### 📜 Histórico de Atividades / Auditoria (PostgreSQL)")
@@ -559,7 +564,7 @@ else:
             )
 
         with c_user:
-            st.write(f"👤 **{dados_usuario['nome']}**")
+            st.write(f"👤 **{dados_usuario.get('nome','')}**")
             if st.button("🚪 Sair", key="btn_logout"):
                 st.session_state["usuario_logado"] = None
                 st.rerun()
