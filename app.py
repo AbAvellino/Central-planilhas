@@ -97,31 +97,29 @@ def inicializar_banco():
 
     conn.commit()
 
-    # Criar Usuário Admin Padrão se não existir nenhum
-    cursor.execute("SELECT COUNT(*) FROM usuarios;")
-    count = cursor.fetchone()[0]
-    if count == 0:
-        cursor.execute("""
-            INSERT INTO usuarios (login, senha, nome, setores, permissao, e_admin)
-            VALUES (%s, %s, %s, %s, %s, %s);
-        """, (
-            "admin",
-            hash_senha("123"),
-            "Gerência / Admin",
-            ["Visão Geral", "Busca Global", "Almoxarifado", "Containers", "Painel Admin"],
-            "Escrita",
-            True
-        ))
-        
-        # Inserir planilhas iniciais padrão
-        cursor.execute("""
-            INSERT INTO planilhas (setor, nome, spreadsheet_id) VALUES
-            ('Almoxarifado', 'Controle', '1nb-gVt6e98Kh4BAYl9l-dgspleRHZDfe8DAT2B1OB_I'),
-            ('Almoxarifado', 'Ferro Quantidade', '1kyrYqJoJLyaL8fvCFVvnFgAbEHIAv6h1W2ZHt1Hmhn4'),
-            ('Containers', 'Controle de containers em patio', '1Im_QMBgD1GYDSe6v4-xvN6rOHUAGTZjA-fl3hB1w5tg')
-            ON CONFLICT DO NOTHING;
-        """)
-        conn.commit()
+    # Criar Usuário Admin Padrão se não existir nenhum (com ON CONFLICT para evitar o erro)
+    cursor.execute("""
+        INSERT INTO usuarios (login, senha, nome, setores, permissao, e_admin)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (login) DO NOTHING;
+    """, (
+        "admin",
+        hash_senha("123"),
+        "Gerência / Admin",
+        ["Visão Geral", "Busca Global", "Almoxarifado", "Containers", "Painel Admin"],
+        "Escrita",
+        True
+    ))
+    
+    # Inserir planilhas iniciais padrão
+    cursor.execute("""
+        INSERT INTO planilhas (setor, nome, spreadsheet_id) VALUES
+        ('Almoxarifado', 'Controle', '1nb-gVt6e98Kh4BAYl9l-dgspleRHZDfe8DAT2B1OB_I'),
+        ('Almoxarifado', 'Ferro Quantidade', '1kyrYqJoJLyaL8fvCFVvnFgAbEHIAv6h1W2ZHt1Hmhn4'),
+        ('Containers', 'Controle de containers em patio', '1Im_QMBgD1GYDSe6v4-xvN6rOHUAGTZjA-fl3hB1w5tg')
+        ON CONFLICT DO NOTHING;
+    """)
+    conn.commit()
 
     cursor.close()
     conn.close()
@@ -411,20 +409,29 @@ else:
 
             if st.button("👤 Salvar Usuário no Banco"):
                 if novo_login and nova_senha and nome_completo and setores_usuario:
-                    conn = obter_conexao_db()
-                    if conn:
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            INSERT INTO usuarios (login, senha, nome, setores, permissao, e_admin)
-                            VALUES (%s, %s, %s, %s, %s, %s);
-                        """, (novo_login, hash_senha(nova_senha), nome_completo, setores_usuario, permissao_tipo, e_admin_check))
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
+                    if novo_login in USUARIOS:
+                        st.error(f"O login '{novo_login}' já está cadastrado. Escolha outro login.")
+                    else:
+                        conn = obter_conexao_db()
+                        if conn:
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                INSERT INTO usuarios (login, senha, nome, setores, permissao, e_admin)
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (login) DO UPDATE SET 
+                                    senha = EXCLUDED.senha,
+                                    nome = EXCLUDED.nome,
+                                    setores = EXCLUDED.setores,
+                                    permissao = EXCLUDED.permissao,
+                                    e_admin = EXCLUDED.e_admin;
+                            """, (novo_login, hash_senha(nova_senha), nome_completo, setores_usuario, permissao_tipo, e_admin_check))
+                            conn.commit()
+                            cursor.close()
+                            conn.close()
 
-                        registrar_log(st.session_state["usuario_logado"], "Cadastro Usuário", f"Usuário '{novo_login}' criado.")
-                        st.success(f"Usuário '{novo_login}' gravado no banco com sucesso!")
-                        st.rerun()
+                            registrar_log(st.session_state["usuario_logado"], "Cadastro Usuário", f"Usuário '{novo_login}' criado/atualizado.")
+                            st.success(f"Usuário '{novo_login}' gravado no banco com sucesso!")
+                            st.rerun()
 
         with tab_gerenciar_usr:
             st.markdown("### Gerenciar Usuários no Banco")
