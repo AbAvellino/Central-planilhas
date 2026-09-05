@@ -43,86 +43,95 @@ def verificar_senha(senha_input: str, senha_hash: str) -> bool:
     return hash_senha(senha_input) == senha_hash
 
 # ==============================================================================
-# CONEXÃO E OPERAÇÕES BANCO DE DADOS POSTGRESQL
+# CONEXÃO E OPERAÇÕES BANCO DE DADOS POSTGRESQL (COM CACHE)
 # ==============================================================================
-def obter_conexao_db():
+@st.cache_resource
+def criar_conexao_db_cache():
     try:
         db_url = st.secrets["postgres"]["url"]
-        conn = psycopg2.connect(db_url)
-        return conn
+        return psycopg2.connect(db_url)
     except Exception as e:
         st.error(f"⚠️ Erro ao conectar ao Banco de Dados PostgreSQL: {e}")
         return None
+
+def obter_conexao_db():
+    conn = criar_conexao_db_cache()
+    if conn is None or conn.closed != 0:
+        st.cache_resource.clear()
+        conn = criar_conexao_db_cache()
+    return conn
 
 def inicializar_banco():
     conn = obter_conexao_db()
     if not conn:
         return
     
-    cursor = conn.cursor()
-    
-    # Tabela de Usuários
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usuarios (
-            login VARCHAR(50) PRIMARY KEY,
-            senha VARCHAR(128) NOT NULL,
-            nome VARCHAR(100) NOT NULL,
-            setores TEXT[] NOT NULL,
-            permissao VARCHAR(20) NOT NULL,
-            e_admin BOOLEAN DEFAULT FALSE
-        );
-    """)
-    
-    # Tabela de Planilhas
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS planilhas (
-            id SERIAL PRIMARY KEY,
-            setor VARCHAR(50) NOT NULL,
-            nome VARCHAR(100) NOT NULL,
-            spreadsheet_id VARCHAR(128) NOT NULL,
-            UNIQUE(setor, nome)
-        );
-    """)
+    try:
+        cursor = conn.cursor()
+        
+        # Tabela de Usuários
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usuarios (
+                login VARCHAR(50) PRIMARY KEY,
+                senha VARCHAR(128) NOT NULL,
+                nome VARCHAR(100) NOT NULL,
+                setores TEXT[] NOT NULL,
+                permissao VARCHAR(20) NOT NULL,
+                e_admin BOOLEAN DEFAULT FALSE
+            );
+        """)
+        
+        # Tabela de Planilhas
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS planilhas (
+                id SERIAL PRIMARY KEY,
+                setor VARCHAR(50) NOT NULL,
+                nome VARCHAR(100) NOT NULL,
+                spreadsheet_id VARCHAR(128) NOT NULL,
+                UNIQUE(setor, nome)
+            );
+        """)
 
-    # Tabela de Logs
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS logs (
-            id SERIAL PRIMARY KEY,
-            data_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            usuario VARCHAR(50) NOT NULL,
-            acao VARCHAR(100) NOT NULL,
-            detalhe TEXT
-        );
-    """)
+        # Tabela de Logs
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS logs (
+                id SERIAL PRIMARY KEY,
+                data_hora TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                usuario VARCHAR(50) NOT NULL,
+                acao VARCHAR(100) NOT NULL,
+                detalhe TEXT
+            );
+        """)
 
-    conn.commit()
+        conn.commit()
 
-    # Criar Usuário Admin Padrão se não existir nenhum (com ON CONFLICT para evitar o erro)
-    cursor.execute("""
-        INSERT INTO usuarios (login, senha, nome, setores, permissao, e_admin)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (login) DO NOTHING;
-    """, (
-        "admin",
-        hash_senha("123"),
-        "Gerência / Admin",
-        ["Visão Geral", "Busca Global", "Almoxarifado", "Containers", "Painel Admin"],
-        "Escrita",
-        True
-    ))
-    
-    # Inserir planilhas iniciais padrão
-    cursor.execute("""
-        INSERT INTO planilhas (setor, nome, spreadsheet_id) VALUES
-        ('Almoxarifado', 'Controle', '1nb-gVt6e98Kh4BAYl9l-dgspleRHZDfe8DAT2B1OB_I'),
-        ('Almoxarifado', 'Ferro Quantidade', '1kyrYqJoJLyaL8fvCFVvnFgAbEHIAv6h1W2ZHt1Hmhn4'),
-        ('Containers', 'Controle de containers em patio', '1Im_QMBgD1GYDSe6v4-xvN6rOHUAGTZjA-fl3hB1w5tg')
-        ON CONFLICT DO NOTHING;
-    """)
-    conn.commit()
-
-    cursor.close()
-    conn.close()
+        # Criar Usuário Admin Padrão se não existir nenhum (com ON CONFLICT para evitar erro)
+        cursor.execute("""
+            INSERT INTO usuarios (login, senha, nome, setores, permissao, e_admin)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (login) DO NOTHING;
+        """, (
+            "admin",
+            hash_senha("123"),
+            "Gerência / Admin",
+            ["Visão Geral", "Busca Global", "Almoxarifado", "Containers", "Painel Admin"],
+            "Escrita",
+            True
+        ))
+        
+        # Inserir planilhas iniciais padrão
+        cursor.execute("""
+            INSERT INTO planilhas (setor, nome, spreadsheet_id) VALUES
+            ('Almoxarifado', 'Controle', '1nb-gVt6e98Kh4BAYl9l-dgspleRHZDfe8DAT2B1OB_I'),
+            ('Almoxarifado', 'Ferro Quantidade', '1kyrYqJoJLyaL8fvCFVvnFgAbEHIAv6h1W2ZHt1Hmhn4'),
+            ('Containers', 'Controle de containers em patio', '1Im_QMBgD1GYDSe6v4-xvN6rOHUAGTZjA-fl3hB1w5tg')
+            ON CONFLICT DO NOTHING;
+        """)
+        conn.commit()
+        cursor.close()
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Erro ao inicializar banco: {e}")
 
 # Executa a inicialização do banco
 inicializar_banco()
@@ -131,61 +140,72 @@ def carregar_usuarios():
     conn = obter_conexao_db()
     if not conn:
         return {}
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT * FROM usuarios;")
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM usuarios;")
+        rows = cursor.fetchall()
+        cursor.close()
 
-    usuarios = {}
-    for r in rows:
-        usuarios[r["login"]] = {
-            "senha": r["senha"],
-            "nome": r["nome"],
-            "setores": r["setores"],
-            "permissao": r["permissao"],
-            "e_admin": r["e_admin"]
-        }
-    return usuarios
+        usuarios = {}
+        for r in rows:
+            usuarios[r["login"]] = {
+                "senha": r["senha"],
+                "nome": r["nome"],
+                "setores": r["setores"],
+                "permissao": r["permissao"],
+                "e_admin": r["e_admin"]
+            }
+        return usuarios
+    except Exception as e:
+        conn.rollback()
+        return {}
 
 def carregar_planilhas_por_setor():
     conn = obter_conexao_db()
     if not conn:
         return {}
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT * FROM planilhas;")
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    try:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM planilhas;")
+        rows = cursor.fetchall()
+        cursor.close()
 
-    planilhas_dict = {}
-    for r in rows:
-        setor = r["setor"]
-        if setor not in planilhas_dict:
-            planilhas_dict[setor] = {}
-        planilhas_dict[setor][r["nome"]] = r["spreadsheet_id"]
-    return planilhas_dict
+        planilhas_dict = {}
+        for r in rows:
+            setor = r["setor"]
+            if setor not in planilhas_dict:
+                planilhas_dict[setor] = {}
+            planilhas_dict[setor][r["nome"]] = r["spreadsheet_id"]
+        return planilhas_dict
+    except Exception as e:
+        conn.rollback()
+        return {}
 
 def registrar_log(usuario, acao, detalhe):
     conn = obter_conexao_db()
     if not conn:
         return
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO logs (usuario, acao, detalhe)
-        VALUES (%s, %s, %s);
-    """, (usuario, acao, detalhe))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO logs (usuario, acao, detalhe)
+            VALUES (%s, %s, %s);
+        """, (usuario, acao, detalhe))
+        conn.commit()
+        cursor.close()
+    except Exception:
+        conn.rollback()
 
 def obter_logs():
     conn = obter_conexao_db()
     if not conn:
         return pd.DataFrame()
-    df = pd.read_sql_query("SELECT data_hora, usuario, acao, detalhe FROM logs ORDER BY id DESC LIMIT 200;", conn)
-    conn.close()
-    return df
+    try:
+        df = pd.read_sql_query("SELECT data_hora, usuario, acao, detalhe FROM logs ORDER BY id DESC LIMIT 200;", conn)
+        return df
+    except Exception:
+        conn.rollback()
+        return pd.DataFrame()
 
 # Carrega dados do banco
 USUARIOS = carregar_usuarios()
@@ -225,7 +245,7 @@ def obter_abas_planilha(spreadsheet_id):
     try:
         sh = client_gspread.open_by_key(spreadsheet_id)
         return [ws.title for ws in sh.worksheets()]
-    except Exception as e:
+    except Exception:
         return []
 
 @st.cache_data(ttl=120)
@@ -275,17 +295,18 @@ if st.session_state["usuario_logado"] is None:
             btn_entrar = st.form_submit_button("🚀 Entrar no Sistema")
             
             if btn_entrar:
-                if usuario in USUARIOS:
-                    senha_armazenada = USUARIOS[usuario]["senha"]
-                    
-                    if verificar_senha(senha, senha_armazenada) or (senha == senha_armazenada):
-                        st.session_state["usuario_logado"] = usuario
-                        registrar_log(usuario, "Login", "Usuário autenticado no PostgreSQL")
-                        st.rerun()
+                with st.spinner("Autenticando..."):
+                    if usuario in USUARIOS:
+                        senha_armazenada = USUARIOS[usuario]["senha"]
+                        
+                        if verificar_senha(senha, senha_armazenada) or (senha == senha_armazenada):
+                            st.session_state["usuario_logado"] = usuario
+                            registrar_log(usuario, "Login", "Usuário autenticado no PostgreSQL")
+                            st.rerun()
+                        else:
+                            st.error("Senha incorreta.")
                     else:
-                        st.error("Senha incorreta.")
-                else:
-                    st.error("Usuário não encontrado.")
+                        st.error("Usuário não encontrado.")
 
 else:
     dados_usuario = USUARIOS[st.session_state["usuario_logado"]]
@@ -380,21 +401,25 @@ else:
 
             if st.button("💾 Salvar Planilha no Banco"):
                 if setor_dest and nome_planilha and id_planilha_input:
-                    conn = obter_conexao_db()
-                    if conn:
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            INSERT INTO planilhas (setor, nome, spreadsheet_id)
-                            VALUES (%s, %s, %s)
-                            ON CONFLICT (setor, nome) DO UPDATE SET spreadsheet_id = EXCLUDED.spreadsheet_id;
-                        """, (setor_dest, nome_planilha, id_planilha_input))
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
+                    with st.spinner("Gravando no PostgreSQL..."):
+                        conn = obter_conexao_db()
+                        if conn:
+                            try:
+                                cursor = conn.cursor()
+                                cursor.execute("""
+                                    INSERT INTO planilhas (setor, nome, spreadsheet_id)
+                                    VALUES (%s, %s, %s)
+                                    ON CONFLICT (setor, nome) DO UPDATE SET spreadsheet_id = EXCLUDED.spreadsheet_id;
+                                """, (setor_dest, nome_planilha, id_planilha_input))
+                                conn.commit()
+                                cursor.close()
 
-                        registrar_log(st.session_state["usuario_logado"], "Cadastro Planilha", f"Planilha '{nome_planilha}' no setor '{setor_dest}'")
-                        st.success("Planilha gravada no PostgreSQL com sucesso!")
-                        st.rerun()
+                                registrar_log(st.session_state["usuario_logado"], "Cadastro Planilha", f"Planilha '{nome_planilha}' no setor '{setor_dest}'")
+                                st.success("Planilha gravada no PostgreSQL com sucesso!")
+                                st.rerun()
+                            except Exception as e:
+                                conn.rollback()
+                                st.error(f"Erro ao salvar planilha: {e}")
 
         with tab_cadastrar_usr:
             st.markdown("### Cadastrar Novo Usuário")
@@ -412,26 +437,30 @@ else:
                     if novo_login in USUARIOS:
                         st.error(f"O login '{novo_login}' já está cadastrado. Escolha outro login.")
                     else:
-                        conn = obter_conexao_db()
-                        if conn:
-                            cursor = conn.cursor()
-                            cursor.execute("""
-                                INSERT INTO usuarios (login, senha, nome, setores, permissao, e_admin)
-                                VALUES (%s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (login) DO UPDATE SET 
-                                    senha = EXCLUDED.senha,
-                                    nome = EXCLUDED.nome,
-                                    setores = EXCLUDED.setores,
-                                    permissao = EXCLUDED.permissao,
-                                    e_admin = EXCLUDED.e_admin;
-                            """, (novo_login, hash_senha(nova_senha), nome_completo, setores_usuario, permissao_tipo, e_admin_check))
-                            conn.commit()
-                            cursor.close()
-                            conn.close()
+                        with st.spinner("Criando usuário no PostgreSQL..."):
+                            conn = obter_conexao_db()
+                            if conn:
+                                try:
+                                    cursor = conn.cursor()
+                                    cursor.execute("""
+                                        INSERT INTO usuarios (login, senha, nome, setores, permissao, e_admin)
+                                        VALUES (%s, %s, %s, %s, %s, %s)
+                                        ON CONFLICT (login) DO UPDATE SET 
+                                            senha = EXCLUDED.senha,
+                                            nome = EXCLUDED.nome,
+                                            setores = EXCLUDED.setores,
+                                            permissao = EXCLUDED.permissao,
+                                            e_admin = EXCLUDED.e_admin;
+                                    """, (novo_login, hash_senha(nova_senha), nome_completo, setores_usuario, permissao_tipo, e_admin_check))
+                                    conn.commit()
+                                    cursor.close()
 
-                            registrar_log(st.session_state["usuario_logado"], "Cadastro Usuário", f"Usuário '{novo_login}' criado/atualizado.")
-                            st.success(f"Usuário '{novo_login}' gravado no banco com sucesso!")
-                            st.rerun()
+                                    registrar_log(st.session_state["usuario_logado"], "Cadastro Usuário", f"Usuário '{novo_login}' criado/atualizado.")
+                                    st.success(f"Usuário '{novo_login}' gravado no banco com sucesso!")
+                                    st.rerun()
+                                except Exception as e:
+                                    conn.rollback()
+                                    st.error(f"Erro ao cadastrar usuário: {e}")
 
         with tab_gerenciar_usr:
             st.markdown("### Gerenciar Usuários no Banco")
@@ -458,41 +487,49 @@ else:
                     
                     with c_btn_save:
                         if st.button("💾 Salvar no Banco", key=f"btn_up_{login}"):
-                            conn = obter_conexao_db()
-                            if conn:
-                                cursor = conn.cursor()
-                                if nova_senha_val.strip():
-                                    cursor.execute("""
-                                        UPDATE usuarios SET nome=%s, senha=%s, setores=%s, permissao=%s, e_admin=%s WHERE login=%s;
-                                    """, (novo_nome_val, hash_senha(nova_senha_val.strip()), novos_setores, nova_perm, e_admin_val, login))
-                                else:
-                                    cursor.execute("""
-                                        UPDATE usuarios SET nome=%s, setores=%s, permissao=%s, e_admin=%s WHERE login=%s;
-                                    """, (novo_nome_val, novos_setores, nova_perm, e_admin_val, login))
-                                conn.commit()
-                                cursor.close()
-                                conn.close()
+                            with st.spinner("Atualizando usuário..."):
+                                conn = obter_conexao_db()
+                                if conn:
+                                    try:
+                                        cursor = conn.cursor()
+                                        if nova_senha_val.strip():
+                                            cursor.execute("""
+                                                UPDATE usuarios SET nome=%s, senha=%s, setores=%s, permissao=%s, e_admin=%s WHERE login=%s;
+                                            """, (novo_nome_val, hash_senha(nova_senha_val.strip()), novos_setores, nova_perm, e_admin_val, login))
+                                        else:
+                                            cursor.execute("""
+                                                UPDATE usuarios SET nome=%s, setores=%s, permissao=%s, e_admin=%s WHERE login=%s;
+                                            """, (novo_nome_val, novos_setores, nova_perm, e_admin_val, login))
+                                        conn.commit()
+                                        cursor.close()
 
-                                registrar_log(st.session_state["usuario_logado"], "Alteração Usuário", f"Usuário '{login}' atualizado no PostgreSQL")
-                                st.success(f"Usuário '{login}' atualizado!")
-                                st.rerun()
+                                        registrar_log(st.session_state["usuario_logado"], "Alteração Usuário", f"Usuário '{login}' atualizado no PostgreSQL")
+                                        st.success(f"Usuário '{login}' atualizado!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        conn.rollback()
+                                        st.error(f"Erro ao atualizar: {e}")
                     
                     with c_btn_del:
                         if st.button("❌ Excluir", key=f"btn_del_{login}", type="secondary"):
                             if login == st.session_state["usuario_logado"]:
                                 st.error("Você não pode excluir o seu próprio usuário logado!")
                             else:
-                                conn = obter_conexao_db()
-                                if conn:
-                                    cursor = conn.cursor()
-                                    cursor.execute("DELETE FROM usuarios WHERE login=%s;", (login,))
-                                    conn.commit()
-                                    cursor.close()
-                                    conn.close()
+                                with st.spinner("Removendo usuário..."):
+                                    conn = obter_conexao_db()
+                                    if conn:
+                                        try:
+                                            cursor = conn.cursor()
+                                            cursor.execute("DELETE FROM usuarios WHERE login=%s;", (login,))
+                                            conn.commit()
+                                            cursor.close()
 
-                                    registrar_log(st.session_state["usuario_logado"], "Exclusão Usuário", f"Usuário '{login}' removido do banco")
-                                    st.warning(f"Usuário '{login}' removido!")
-                                    st.rerun()
+                                            registrar_log(st.session_state["usuario_logado"], "Exclusão Usuário", f"Usuário '{login}' removido do banco")
+                                            st.warning(f"Usuário '{login}' removido!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            conn.rollback()
+                                            st.error(f"Erro ao excluir: {e}")
 
         with tab_logs:
             st.markdown("### 📜 Histórico de Atividades / Auditoria (PostgreSQL)")
@@ -538,7 +575,9 @@ else:
                 )
             
             else:
-                abas = obter_abas_planilha(id_planilha)
+                with st.spinner("Carregando abas da planilha..."):
+                    abas = obter_abas_planilha(id_planilha)
+                
                 aba_selecionada = None
                 
                 c_aba, c_exp = st.columns([2, 2])
@@ -546,7 +585,8 @@ else:
                     if abas:
                         aba_selecionada = st.selectbox("📑 Selecione a Aba da Planilha:", abas)
                 
-                df_dados = ler_planilha_api(id_planilha, aba_selecionada)
+                with st.spinner("Buscando dados da planilha via API..."):
+                    df_dados = ler_planilha_api(id_planilha, aba_selecionada)
                 
                 if df_dados is not None:
                     pode_editar = (dados_usuario.get("permissao", "Escrita") == "Escrita")
@@ -567,14 +607,15 @@ else:
                     if pode_editar:
                         with col_salvar:
                             if st.button("💾 Salvar Alterações na Nuvem"):
-                                if salvar_alteracoes_api(id_planilha, df_editado, aba_selecionada):
-                                    registrar_log(
-                                        st.session_state["usuario_logado"], 
-                                        "Edição Planilha", 
-                                        f"Planilha '{planilha_selecionada}' (Aba: '{aba_selecionada}') atualizada"
-                                    )
-                                    st.success("Planilha sincronizada e alteração registrada nos Logs!")
-                                    st.rerun()
+                                with st.spinner("Enviando alterações para o Google Sheets..."):
+                                    if salvar_alteracoes_api(id_planilha, df_editado, aba_selecionada):
+                                        registrar_log(
+                                            st.session_state["usuario_logado"], 
+                                            "Edição Planilha", 
+                                            f"Planilha '{planilha_selecionada}' (Aba: '{aba_selecionada}') atualizada"
+                                        )
+                                        st.success("Planilha sincronizada e alteração registrada nos Logs!")
+                                        st.rerun()
                     
                     with col_csv:
                         csv_data = df_editado.to_csv(index=False).encode('utf-8')
